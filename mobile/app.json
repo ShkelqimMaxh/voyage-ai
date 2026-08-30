@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "RouteRadio",
+    "slug": "routeradio",
+    "scheme": "routeradio",
+    "version": "0.1.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0F14"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "fm.voyage.routeradio",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "RouteRadio uses your location to narrate the villages and landmarks you are driving past.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RouteRadio needs background location so the host can keep talking when the phone is locked or CarPlay is connected.",
+        "UIBackgroundModes": ["audio", "location"],
+        "UIApplicationSceneManifest": {
+          "CPTemplateApplicationSceneSessionRoleApplication": [
+            {
+              "UISceneConfigurationName": "CarPlay",
+              "UISceneDelegateClassName": "CarPlaySceneDelegate"
+            }
+          ]
+        }
+      },
+      "entitlements": {
+        "com.apple.developer.carplay-audio": true
+      }
+    },
+    "android": {
+      "package": "fm.voyage.routeradio",
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0B0F14"
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "RouteRadio narrates the road around you, including when the app is in the background.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      "./modules/audio-ducking/plugin.js",
+      "./modules/carplay/plugin.js"
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:8000"
+    }
+  }
+}

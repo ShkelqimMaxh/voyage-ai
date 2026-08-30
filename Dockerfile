@@ -3,6 +3,8 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
+COPY backend/start.sh ./start.sh
+RUN chmod +x ./start.sh
 ENV PYTHONUNBUFFERED=1
-EXPOSE 8000
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+ENV PYTHONPATH=/app
+CMD ["./start.sh"]

@@ -51,8 +51,8 @@ export function NowPlayingScreen() {
 function IdleBody({ store }: { store: ReturnType<typeof usePlayerStore.getState> }) {
   return (
     <View style={styles.idle}>
-      <View>
-        <View style={styles.rule} />
+      <View style={styles.poster}>
+        <View style={styles.posterRule} />
         <Text style={styles.markIdle}>ROUTERADIO</Text>
         <Text style={styles.hero}>VoyageFM</Text>
         <Text style={styles.waiting}>Waiting for a road.</Text>
@@ -84,7 +84,9 @@ function OnAirBody({
       <Text style={styles.hook} numberOfLines={1}>
         {hookFor(place)}
       </Text>
+      <View style={styles.hr} />
       <View style={styles.host}>
+        <Text style={styles.cardKicker}>{speaking ? "ON AIR" : "NOW PLAYING"}</Text>
         <Text style={styles.hostTitle} numberOfLines={1}>
           {speaking ? store.script?.title ?? "On air" : "Music"}
         </Text>
@@ -96,6 +98,7 @@ function OnAirBody({
               : "The host cuts back in and the music ducks."}
         </Text>
       </View>
+      <View style={styles.hr} />
       <View style={styles.grid}>
         <BigButton label="Stop" tone="stop" onPress={() => void store.stop()} />
         <BigButton label="Skip" onPress={() => void store.skipNarration()} />
@@ -117,21 +120,25 @@ function BelowFold({
   const kmh = store.point?.speedMps != null ? Math.round(store.point.speedMps * 3.6) : 0;
   return (
     <View style={styles.below}>
-      <CarMap
-        point={store.point}
-        label={place?.name}
-        showDemoRoute={!store.live}
-        route={store.demoPath}
-      />
-      <Text style={styles.telemetry}>
-        {kmh} km/h
-        {"  ·  "}
-        {compass(store.point?.heading)}
-        {"  ·  "}
-        {pace}
-        {"  ·  "}
-        {store.live ? "GPS locked" : "Demo"}
-      </Text>
+      <View style={styles.instrument}>
+        <CarMap
+          point={store.point}
+          label={place?.name}
+          showDemoRoute={!store.live}
+          route={store.demoPath}
+          framed={false}
+        />
+        <View style={styles.hr} />
+        <View style={styles.statRow}>
+          <StatCell label="Speed" value={`${kmh}`} unit="km/h" lead />
+          <View style={styles.statDivider} />
+          <StatCell label="Heading" value={compass(store.point?.heading)} />
+          <View style={styles.statDivider} />
+          <StatCell label="Pace" value={pace} />
+          <View style={styles.statDivider} />
+          <StatCell label="Source" value={store.live ? "Live" : "Demo"} lead={store.live} />
+        </View>
+      </View>
 
       <View style={styles.chips}>
         {TOPICS.filter((topic) => ["surprise", "food", "history", "culture"].includes(topic.id)).map((topic) => {
@@ -160,6 +167,21 @@ function BelowFold({
           onPress={() => void store.setAudioMode("external")}
         />
       </View>
+    </View>
+  );
+}
+
+// A modular-grid instrument cell — equal-width, flush-left, a big Archivo
+// numeral over a small tracked label. This is a driving companion, so its
+// live telemetry gets read as data, not tucked away as a caption.
+function StatCell({ label, value, unit, lead }: { label: string; value: string; unit?: string; lead?: boolean }) {
+  return (
+    <View style={styles.statCell}>
+      <Text style={[styles.statValue, lead && styles.statValueLead]} numberOfLines={1}>
+        {value}
+        {unit ? <Text style={styles.statUnit}> {unit}</Text> : null}
+      </Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
@@ -207,10 +229,21 @@ const styles = StyleSheet.create({
     letterSpacing: 4.2,
   },
   idle: { flexGrow: 1, minHeight: 560, justifyContent: "space-between" },
-  rule: { width: 56, height: 4, backgroundColor: colors.accent, marginTop: 120 },
+  // The one poster moment on this screen — a full accent field with
+  // display-grade type, the same license the system gives the deck's
+  // section dividers and the landing's closing banner. Bleeds past the
+  // scroll's own side padding so the field actually reads as a field.
+  poster: {
+    marginHorizontal: -24,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    paddingBottom: 44,
+    backgroundColor: colors.accent,
+  },
+  posterRule: { width: 56, height: ruleWidth * 2, backgroundColor: colors.onAccent },
   markIdle: {
     fontFamily: fonts.mark,
-    color: colors.muted,
+    color: colors.onAccentSoft,
     fontSize: 14,
     fontWeight: "700",
     letterSpacing: 4.5,
@@ -218,18 +251,15 @@ const styles = StyleSheet.create({
   },
   hero: {
     fontFamily: fonts.body,
-    color: colors.text,
+    color: colors.onAccent,
     fontSize: 56,
     fontWeight: "900",
     letterSpacing: -1,
     marginTop: 6,
-    // The one poster moment on this screen — display-grade type carrying
-    // the accent's neighbourhood, same license the system gives dividers
-    // and closing banners.
   },
   waiting: {
     fontFamily: fonts.body,
-    color: colors.muted,
+    color: colors.onAccentSoft,
     fontSize: 18,
     fontWeight: "500",
     marginTop: 18,
@@ -252,12 +282,22 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 4,
   },
+  // A strong 2px rule between major sections — "let the grid show" instead
+  // of leaning on whitespace alone to separate blocks.
+  hr: { height: ruleWidth, backgroundColor: colors.divider },
   host: {
     backgroundColor: colors.surface,
     borderRadius: radius.card,
     padding: space.lg,
     gap: space.xs,
-    marginTop: space.md,
+  },
+  cardKicker: {
+    fontFamily: fonts.body,
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
   },
   hostTitle: {
     fontFamily: fonts.body,
@@ -274,11 +314,40 @@ const styles = StyleSheet.create({
   },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
   below: { gap: 16, paddingTop: 8, borderTopWidth: ruleWidth, borderTopColor: colors.divider },
-  telemetry: {
+  // The map and its live telemetry read as one instrument, map on top,
+  // a row of equal-width data cells underneath — the modular grid doing
+  // the organising instead of a caption line doing the explaining.
+  instrument: {
+    borderWidth: ruleWidth,
+    borderColor: colors.divider,
+    borderRadius: radius.card,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+  },
+  statRow: { flexDirection: "row" },
+  statCell: { flex: 1, paddingVertical: space.sm, paddingHorizontal: space.sm },
+  statDivider: { width: ruleWidth, backgroundColor: colors.divider },
+  statValue: {
+    fontFamily: fonts.body,
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: headingWeight,
+  },
+  statValueLead: { color: colors.accent },
+  statUnit: {
     fontFamily: fonts.body,
     color: colors.muted,
-    fontSize: 13,
-    fontWeight: "500",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  statLabel: {
+    fontFamily: fonts.body,
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginTop: 2,
   },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
@@ -289,9 +358,9 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
     borderRadius: radius.btn,
   },
-  chipOn: { borderColor: colors.accent },
+  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   chipText: { fontFamily: fonts.body, color: colors.inkSoft, fontWeight: "700", fontSize: 16 },
-  chipTextOn: { color: colors.accent },
+  chipTextOn: { color: colors.onAccent },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   // Paragraph-size text in the accent reads better a deep ramp step
   // (--color-accent-700) than the accent itself — the accent/ground pair

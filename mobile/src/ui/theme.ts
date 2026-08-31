@@ -25,6 +25,10 @@ export const colors = {
   accentPressed: "#dd2b0f",
   // .btn-primary's label color is var(--color-bg), not white
   onAccent: "#f3f2f2",
+  // color-mix(in srgb, var(--color-bg) 75%, transparent) — the same
+  // ink-mix convention as `muted`/`inkSoft`, flipped for text sitting
+  // directly on a solid accent field (the system's "poster" moments).
+  onAccentSoft: "rgba(243, 242, 242, 0.75)",
   speak: "#ec3013",
   go: "#ec3013",
   stop: "#ec3013",

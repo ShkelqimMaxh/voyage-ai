@@ -10,7 +10,7 @@ import { usePlayerStore } from "../../state/playerStore";
 import { BigButton } from "../components/BigButton";
 import { CarMap } from "../components/CarMap";
 import { OnAirMark } from "../components/OnAirMark";
-import { colors, fonts, radius, space } from "../theme";
+import { accentRamp, colors, fonts, headingWeight, radius, ruleWidth, space } from "../theme";
 
 export function NowPlayingScreen() {
   const store = usePlayerStore();
@@ -31,7 +31,7 @@ export function NowPlayingScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.top}>
           <Text style={styles.mark}>{onAir ? "ROUTERADIO · VOYAGEFM" : "ROUTERADIO"}</Text>
@@ -223,6 +223,9 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: -1,
     marginTop: 6,
+    // The one poster moment on this screen — display-grade type carrying
+    // the accent's neighbourhood, same license the system gives dividers
+    // and closing banners.
   },
   waiting: {
     fontFamily: fonts.body,
@@ -250,17 +253,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   host: {
-    backgroundColor: colors.panel,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
-    padding: 20,
-    gap: 10,
-    marginTop: 16,
+    padding: space.lg,
+    gap: space.xs,
+    marginTop: space.md,
   },
   hostTitle: {
     fontFamily: fonts.body,
     color: colors.text,
     fontSize: 21,
-    fontWeight: "800",
+    fontWeight: headingWeight,
   },
   hostLine: {
     fontFamily: fonts.body,
@@ -270,7 +273,7 @@ const styles = StyleSheet.create({
     lineHeight: 25,
   },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
-  below: { gap: 16, paddingTop: 8, borderTopWidth: 2, borderTopColor: colors.line },
+  below: { gap: 16, paddingTop: 8, borderTopWidth: ruleWidth, borderTopColor: colors.divider },
   telemetry: {
     fontFamily: fonts.body,
     color: colors.muted,
@@ -282,13 +285,16 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: "center",
     paddingHorizontal: 14,
-    borderWidth: 2,
-    borderColor: colors.line,
+    borderWidth: ruleWidth,
+    borderColor: colors.divider,
     borderRadius: radius.btn,
   },
   chipOn: { borderColor: colors.accent },
   chipText: { fontFamily: fonts.body, color: colors.inkSoft, fontWeight: "700", fontSize: 16 },
   chipTextOn: { color: colors.accent },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  error: { color: colors.accent, fontSize: 15, fontFamily: fonts.body },
+  // Paragraph-size text in the accent reads better a deep ramp step
+  // (--color-accent-700) than the accent itself — the accent/ground pair
+  // is only tuned to ~3:1, enough for chrome, not for body copy.
+  error: { color: accentRamp[700], fontSize: 15, fontFamily: fonts.body },
 });

@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text } from "react-native";
 
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, headingWeight, radius, ruleWidth } from "../theme";
 
 export function BigButton({
   label,
@@ -24,14 +24,14 @@ export function BigButton({
         primary
           ? { backgroundColor: pressed ? colors.accentPressed : colors.accent }
           : {
-              backgroundColor: colors.panelAlt,
-              borderWidth: 2,
-              borderColor: pressed ? colors.accent : colors.line,
+              backgroundColor: "transparent",
+              borderWidth: ruleWidth,
+              borderColor: pressed ? colors.accent : colors.divider,
             },
         disabled ? styles.disabled : null,
       ]}
     >
-      <Text style={[styles.label, { color: primary ? "#FFFFFF" : colors.text }]}>{label}</Text>
+      <Text style={[styles.label, { color: primary ? colors.onAccent : colors.text }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: fonts.body,
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: headingWeight,
   },
   disabled: { opacity: 0.45 },
 });

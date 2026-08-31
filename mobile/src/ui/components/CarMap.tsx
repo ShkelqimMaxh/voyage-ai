@@ -3,7 +3,7 @@ import { Platform, StyleSheet, Text, View } from "react-native";
 
 import type { GeoPoint } from "../../core/types";
 import { PEJA_ISTOG_ROAD_WAYPOINTS } from "../../engine/location/pejaIstogDemo";
-import { colors, radius } from "../theme";
+import { colors, radius, ruleWidth } from "../theme";
 
 const MAP_HOST_ID = "routeradio-car-map";
 
@@ -21,7 +21,7 @@ function ensureLeafletCss(): void {
     #${MAP_HOST_ID}, #${MAP_HOST_ID} .leaflet-container {
       width: 100%;
       height: 150px;
-      background: #1D1917;
+      background: ${colors.surface};
     }
     #${MAP_HOST_ID} img,
     #${MAP_HOST_ID} .leaflet-tile,
@@ -78,14 +78,14 @@ export function CarMap({
       if (showDemoRoute) {
         L.polyline(
           route.map((item) => [item.latitude, item.longitude]),
-          { color: "#EC3013", weight: 4, opacity: 0.95 },
+          { color: colors.accent, weight: 4, opacity: 0.95 },
         ).addTo(map);
       }
       markerRef.current = L.circleMarker([start.latitude, start.longitude], {
         radius: 9,
-        color: "#141110",
+        color: colors.text,
         weight: 2,
-        fillColor: "#EC3013",
+        fillColor: colors.accent,
         fillOpacity: 1,
       }).addTo(map);
       mapRef.current = map;
@@ -129,13 +129,13 @@ export function CarMap({
 
 const styles = StyleSheet.create({
   shell: {
-    backgroundColor: colors.panel,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderWidth: ruleWidth,
+    borderColor: colors.divider,
   },
-  canvas: { width: "100%", height: 150, backgroundColor: "#1D1917" },
+  canvas: { width: "100%", height: 150, backgroundColor: colors.surface },
   caption: {
     color: colors.muted,
     fontSize: 13,

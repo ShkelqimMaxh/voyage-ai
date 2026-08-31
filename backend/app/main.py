@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -46,7 +47,23 @@ async def health() -> dict:
     }
 
 
-WEB_DIR = Path(__file__).resolve().parent.parent.parent / "mobile" / "dist"
+def _resolve_web_dir() -> Path:
+    """Locate the built Expo web bundle.
+
+    Local dev layout:  backend/app/main.py -> repo_root/mobile/dist
+    Docker image layout: /app/app/main.py  -> /app/mobile/dist
+    Try both (plus an explicit override) instead of assuming one fixed depth.
+    """
+    if override := os.environ.get("WEB_DIST_DIR"):
+        return Path(override)
+    here = Path(__file__).resolve().parent  # .../app
+    for candidate in (here.parent / "mobile" / "dist", here.parent.parent / "mobile" / "dist"):
+        if (candidate / "index.html").is_file():
+            return candidate
+    return here.parent / "mobile" / "dist"
+
+
+WEB_DIR = _resolve_web_dir()
 
 
 @app.get("/")

@@ -6,12 +6,12 @@
     "version": "0.1.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0B0F14"
+      "backgroundColor": "#f3f2f2"
     },
     "ios": {
       "supportsTablet": true,
@@ -45,7 +45,7 @@
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#0B0F14"
+        "backgroundColor": "#f3f2f2"
       }
     },
     "plugins": [

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 
-import { colors, fonts, radius } from "../theme";
+import { colors, fonts, radius, ruleWidth } from "../theme";
 
 export function OnAirMark({ state }: { state: "standby" | "speaking" | "music" }) {
   const pulse = useRef(new Animated.Value(1)).current;
@@ -42,14 +42,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    borderWidth: 2,
+    borderWidth: ruleWidth,
     borderRadius: radius.pill,
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
   live: { borderColor: colors.accent },
-  standby: { borderColor: colors.line },
-  dot: { width: 9, height: 9, borderRadius: 5 },
+  standby: { borderColor: colors.divider },
+  dot: { width: 9, height: 9, borderRadius: radius.pill },
   label: {
     fontFamily: fonts.body,
     fontSize: 12,

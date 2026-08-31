@@ -10,14 +10,21 @@ export class TtsService {
     if (cached) {
       return { ...script, audioUrl: cached };
     }
-    try {
-      const url = await withDeadline(renderTts(script), 28000);
-      if (url) {
-        routeCache.putAudio(script.id, url);
-        return { ...script, audioUrl: url };
+    // Try the cloud voice, but NEVER throw: a null audioUrl tells the mixer
+    // to speak with the on-device voice instead. The host must not go silent.
+    const deadlines = [25000, 45000];
+    for (const deadlineMs of deadlines) {
+      try {
+        const url = await withDeadline(renderTts(script), deadlineMs);
+        if (url) {
+          routeCache.putAudio(script.id, url);
+          return { ...script, audioUrl: url };
+        }
+        // Backend answered but has no cloud voice configured — retrying won't help.
+        break;
+      } catch {
+        // Network error or timeout — one retry, then device fallback.
       }
-    } catch {
-      // device speech fallback
     }
     return { ...script, audioUrl: null };
   }

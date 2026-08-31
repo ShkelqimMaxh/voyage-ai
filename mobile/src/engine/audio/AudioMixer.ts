@@ -38,15 +38,37 @@ export class AudioMixer {
     return this.phase;
   }
 
-  async prepare(mode: AudioMode): Promise<void> {
+  async prepare(mode: AudioMode, onAir = false): Promise<void> {
     await duckingController.setMode(mode);
     await duckingController.activate();
     if (Platform.OS === "web") {
       await unlockWebAudio();
     }
-    if (mode === "builtin") {
-      await this.ensureMusic();
+    if (onAir) {
+      this.speaking = true;
+      this.setPhase("speaking");
     }
+    if (mode === "builtin") {
+      void this.ensureMusic(onAir).then(() => {
+        if (onAir) void this.holdDuck();
+      });
+    } else if (onAir) {
+      await this.holdDuck();
+    }
+  }
+
+  async holdDuck(): Promise<void> {
+    if (Platform.OS === "web") {
+      await unlockWebAudio();
+    }
+    if (!this.ducked) {
+      this.setPhase("ducking");
+      await duckingController.beginSpeech();
+      await this.rampMusic(config.duckLevel, config.duckMs);
+      this.ducked = true;
+    }
+    this.speaking = true;
+    this.setPhase("speaking");
   }
 
   async toggleMusic(on: boolean): Promise<void> {
@@ -66,20 +88,22 @@ export class AudioMixer {
     }
     this.speaking = true;
     this.setPhase("speaking");
-    try {
-      await this.playHost(script);
-    } finally {
-      this.speaking = false;
-    }
+    await this.playHost(script);
   }
 
   private async playHost(script: NarrationScript): Promise<void> {
     ttsService.stopDevice();
-    const url = script.audioUrl ?? (await ttsService.resolveAudio(script)).audioUrl;
-    if (!url) {
-      throw new Error("host voice missing");
+    // undefined = not resolved yet; null = resolved, cloud voice unavailable.
+    const url = script.audioUrl === undefined ? (await ttsService.resolveAudio(script)).audioUrl : script.audioUrl;
+    if (url) {
+      try {
+        await this.playRemoteSpeech(url, script.durationHintS);
+        return;
+      } catch {
+        // Cloud clip failed to load/play — fall through to the device voice.
+      }
     }
-    await this.playRemoteSpeech(url, script.durationHintS);
+    await ttsService.speakOnDevice(script.spokenText);
   }
 
   async skipSpeech(): Promise<void> {
@@ -104,21 +128,30 @@ export class AudioMixer {
     this.music = null;
   }
 
-  private async ensureMusic(): Promise<void> {
+  private async ensureMusic(startDucked = false): Promise<void> {
     if (this.music) {
       if (this.musicOn) await this.music.playAsync();
+      if (startDucked) {
+        await this.music.setVolumeAsync?.(config.duckLevel);
+        this.ducked = true;
+      }
       return;
     }
     try {
       const { Audio } = await import("expo-av");
       const { sound } = await Audio.Sound.createAsync(
         { uri: AMBIENT },
-        { shouldPlay: this.musicOn, isLooping: true, volume: 1 },
+        { shouldPlay: this.musicOn, isLooping: true, volume: startDucked ? config.duckLevel : 1 },
       );
       this.music = sound;
+      if (startDucked) {
+        this.ducked = true;
+        this.setPhase("speaking");
+        return;
+      }
       this.setPhase(this.musicOn ? "music" : "idle");
     } catch {
-      this.setPhase("idle");
+      this.setPhase(startDucked ? "speaking" : "idle");
     }
   }
 

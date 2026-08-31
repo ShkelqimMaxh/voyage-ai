@@ -98,7 +98,7 @@ async def _gemini_tts(text: str, voice: str, model: str, api_key: str) -> bytes:
     models = [model, "gemini-2.5-pro-preview-tts", "gemini-2.5-flash-preview-tts"]
     voices = [voice, "Callirrhoe", "Achird", "Umbriel", "Aoede"]
     last_error = "Gemini TTS failed"
-    async with httpx.AsyncClient(timeout=45.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         for candidate in dict.fromkeys(models):
             response = await client.post(
                 GEMINI_TTS_URL.format(model=candidate),

@@ -107,20 +107,41 @@ async function enqueueScript<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
+function openerScript(place: Place): NarrationScript {
+  const named = place.name && place.name !== "this road";
+  const spokenText = named
+    ? `VoyageFM. We're on the air. I'm with you through ${place.name}. Stay with me.`
+    : "VoyageFM. We're on the air. I'm with you on this road. Stay with me.";
+  return {
+    id: `opener-${Date.now()}`,
+    placeId: place.id,
+    topic: "road",
+    title: "On air",
+    spokenText,
+    durationHintS: 8,
+    bridgeIn: "On air.",
+    tags: ["opener"],
+    cached: false,
+    source: "gemini",
+  };
+}
+
+async function resolveVoice(script: NarrationScript): Promise<NarrationScript> {
+  // Never throws: audioUrl null means the mixer speaks with the device voice.
+  const resolved = await ttsService.resolveAudio(script);
+  if (Platform.OS === "web" && resolved.audioUrl) {
+    void warmWebSpeech(resolved.audioUrl);
+  }
+  return resolved;
+}
+
 async function prepareClip(get: () => PlayerState, place: Place, topic: Topic): Promise<ReadyClip> {
   const script = await enqueueScript(async () => {
-    const next = await withDeadline(buildScript(get, place, topic), 25000);
+    const next = await withDeadline(buildScript(get, place, topic), 60000);
     rememberSaid(next.spokenText);
     return next;
   });
-  const resolved = await ttsService.resolveAudio(script);
-  if (!resolved.audioUrl) {
-    throw new Error("gemini voice missing");
-  }
-  if (Platform.OS === "web") {
-    void warmWebSpeech(resolved.audioUrl);
-  }
-  return { script: resolved, place };
+  return { script: await resolveVoice(script), place };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -158,13 +179,12 @@ async function playClip(
   });
   try {
     await audioMixer.speak(script);
-  } catch {
-    // next loop iteration speaks immediately
+  } catch (error) {
+    set({ error: error instanceof Error ? error.message : "Playback failed" });
   }
   rememberSaid(script.spokenText);
   previousIds.push(place.id);
   if (previousIds.length > 8) previousIds.shift();
-  set({ busy: false });
 }
 
 async function runHostForever(set: (partial: Partial<PlayerState>) => void, get: () => PlayerState): Promise<void> {
@@ -173,9 +193,11 @@ async function runHostForever(set: (partial: Partial<PlayerState>) => void, get:
   loopRunning = true;
   const queue: ReadyClip[] = [];
   let inflight = 0;
+  let cooldownUntil = 0;
   const ahead = 2;
 
   const prefetch = () => {
+    if (Date.now() < cooldownUntil) return;
     while (inflight + queue.length < ahead && hostAlive && hostEpoch === epoch) {
       inflight += 1;
       const place = pickPlace(get);
@@ -184,19 +206,47 @@ async function runHostForever(set: (partial: Partial<PlayerState>) => void, get:
         .then((clip) => {
           if (hostAlive && hostEpoch === epoch) queue.push(clip);
         })
-        .catch(() => undefined)
+        .catch((error) => {
+          // Script generation failed (backend down?) — back off instead of hammering.
+          cooldownUntil = Date.now() + 4000;
+          if (hostAlive && hostEpoch === epoch) {
+            set({ error: error instanceof Error ? error.message : "Host clip failed" });
+          }
+        })
         .finally(() => {
           inflight -= 1;
         });
     }
   };
 
-  prefetch();
   try {
+    await audioMixer.holdDuck();
+    set({ busy: true, phase: "speaking" });
+
+    // Speak now — wait at most 8s for the cloud voice, then open with the
+    // device voice. The host starts talking seconds after play, no matter what.
+    try {
+      const place = pickPlace(get);
+      const draft = openerScript(place);
+      let opener: NarrationScript;
+      try {
+        opener = await withDeadline(resolveVoice(draft), 8000);
+      } catch {
+        opener = { ...draft, audioUrl: null };
+      }
+      prefetch();
+      if (hostAlive && hostEpoch === epoch) {
+        await playClip(set, get, opener, place);
+      }
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "Host voice failed" });
+    }
+
+    prefetch();
     while (hostAlive && hostEpoch === epoch) {
       prefetch();
       while (hostAlive && hostEpoch === epoch && queue.length === 0) {
-        await sleep(120);
+        await sleep(80);
         prefetch();
       }
       const clip = queue.shift();
@@ -256,7 +306,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   async startDemo(routeId: "peja-istog" | "sf-oakland" = "peja-istog") {
     await get().stop();
-    await audioMixer.prepare(get().audioMode);
+    await audioMixer.prepare(get().audioMode, true);
     unphase = audioMixer.onPhase((phase) => set({ phase }));
     uncarplay = carPlayBridge.subscribe((command) => {
       if (command.type === "playPause") void get().toggleMusic();
@@ -275,7 +325,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const path = routeId === "sf-oakland" ? SF_OAKLAND_WAYPOINTS : PEJA_ISTOG_ROAD_WAYPOINTS;
     const durationMs = routeId === "sf-oakland" ? US_DEMO_DURATION_MS : PEJA_ISTOG_DURATION_MS;
     const speedMps = routeId === "sf-oakland" ? US_DEMO_SPEED_MPS : PEJA_ISTOG_SPEED_MPS;
-    set({ demo: true, live: false, error: undefined, demoPath: path });
+    const start = path[0];
+    const seedName = routeId === "sf-oakland" ? "San Francisco" : "Peja";
+    set({
+      demo: true,
+      live: false,
+      error: undefined,
+      demoPath: path,
+      point: { ...start, timestamp: Date.now(), speedMps },
+      context: {
+        current: {
+          id: `demo-start-${routeId}`,
+          name: seedName,
+          kind: "town",
+          latitude: start.latitude,
+          longitude: start.longitude,
+        },
+        nearby: [],
+        region: null,
+        source: "knowledge",
+      },
+    });
     const polyline = path.map((item, index) => ({
       ...item,
       timestamp: Date.now() + index * 1000,
@@ -284,15 +354,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     void fetchWeather(polyline[0]).then((weather) => set({ weather }));
     unpoint = locationEngine.onPoint((point) => queuePoint(set, get, point));
     locationEngine.startDemo(path, durationMs, speedMps);
-    for (let i = 0; i < 40 && !get().context?.current; i += 1) {
-      await sleep(200);
+    if (locationEngine.lastPoint) {
+      set({ point: locationEngine.lastPoint });
     }
     void runHostForever(set, get);
   },
 
   async startLive() {
     await get().stop();
-    await audioMixer.prepare(get().audioMode);
+    await audioMixer.prepare(get().audioMode, true);
     unphase = audioMixer.onPhase((phase) => set({ phase }));
     uncarplay = carPlayBridge.subscribe((command) => {
       if (command.type === "playPause") void get().toggleMusic();
@@ -344,7 +414,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   async setAudioMode(mode) {
     set({ audioMode: mode });
-    await audioMixer.prepare(mode);
+    await audioMixer.prepare(mode, get().live || get().demo);
   },
 
   async skipNarration() {

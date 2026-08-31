@@ -4,7 +4,7 @@ import { Animated, StyleSheet, Text, View } from "react-native";
 import { colors, fonts, radius, ruleWidth } from "../theme";
 
 const LABEL: Record<"standby" | "speaking" | "music", string> = {
-  standby: "HOST STANDBY",
+  standby: "STANDBY",
   speaking: "ON AIR",
   music: "MUSIC",
 };
@@ -32,9 +32,8 @@ function useLevel(seed: number, active: boolean) {
 
 export function OnAirMark({ state }: { state: "standby" | "speaking" | "music" }) {
   const speaking = state === "speaking";
-  // Live reverses to a solid accent field — the same fill/on-fill swap the
-  // system uses for a checked segmented control or a pressed primary
-  // button — rather than a merely outlined, easy-to-miss accent tint.
+  // Live gets a tinted accent pill — a soft fill plus an accent stroke —
+  // the modern "status chip" treatment, instead of a solid poster block.
   const live = state !== "standby";
 
   const bar1 = useLevel(0, speaking);
@@ -50,9 +49,9 @@ export function OnAirMark({ state }: { state: "standby" | "speaking" | "music" }
           <Animated.View style={[styles.bar, { transform: [{ scaleY: bar3 }] }]} />
         </View>
       ) : (
-        <View style={[styles.dot, { backgroundColor: live ? colors.onAccent : colors.muted }]} />
+        <View style={[styles.dot, { backgroundColor: live ? colors.accent : colors.muted }]} />
       )}
-      <Text style={[styles.label, { color: live ? colors.onAccent : colors.muted }]}>{LABEL[state]}</Text>
+      <Text style={[styles.label, { color: live ? colors.accent : colors.muted }]}>{LABEL[state]}</Text>
     </View>
   );
 }
@@ -65,20 +64,19 @@ const styles = StyleSheet.create({
     borderWidth: ruleWidth,
     borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
-  live: { backgroundColor: colors.accent, borderColor: colors.accent },
-  standby: { borderColor: colors.divider },
+  live: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
+  standby: { borderColor: colors.divider, backgroundColor: colors.surface },
   dot: { width: 9, height: 9, borderRadius: radius.pill },
   // A tiny live equalizer standing in for the host's voice — this is a
-  // spoken-narration app, so "on air" should look like audio is actually
-  // moving, not just a status light.
+  // spoken-narration app, so "on air" should look like audio is moving.
   bars: { flexDirection: "row", alignItems: "center", gap: 2, height: 12, width: 15 },
-  bar: { width: 3, height: 12, backgroundColor: colors.onAccent },
+  bar: { width: 3, height: 12, borderRadius: 2, backgroundColor: colors.accent },
   label: {
     fontFamily: fonts.body,
     fontSize: 12,
     fontWeight: "700",
-    letterSpacing: 1.9,
+    letterSpacing: 1.6,
   },
 });

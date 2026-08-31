@@ -1,7 +1,7 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { paceFromSpeed } from "../../core/geo";
 import type { Place } from "../../core/types";
@@ -10,14 +10,32 @@ import { usePlayerStore } from "../../state/playerStore";
 import { BigButton } from "../components/BigButton";
 import { CarMap } from "../components/CarMap";
 import { OnAirMark } from "../components/OnAirMark";
-import { accentRamp, colors, fonts, headingWeight, radius, ruleWidth, space } from "../theme";
+import {
+  accentRamp,
+  cardShadow,
+  colors,
+  fonts,
+  headingWeight,
+  radius,
+  ruleWidth,
+  scaleType,
+  space,
+} from "../theme";
+
+// Breakpoints for the adaptive layout: compact phones tighten padding,
+// anything tablet-width and up goes two-column so the map becomes a
+// proper co-pilot panel instead of something below the fold.
+const WIDE = 900;
+const COMPACT = 380;
 
 export function NowPlayingScreen() {
   const store = usePlayerStore();
+  const { width } = useWindowDimensions();
+  const isWide = width >= WIDE;
+  const pad = width < COMPACT ? 16 : 24;
   const place = store.context?.current ?? null;
   const onAir = store.live || store.demo;
-  const speaking = store.phase === "speaking" || store.phase === "ducking";
-  const mark = !onAir ? "standby" : speaking ? "speaking" : "music";
+  const mark = !onAir ? "standby" : "speaking";
 
   useEffect(() => {
     if (onAir) {
@@ -31,33 +49,64 @@ export function NowPlayingScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <StatusBar style="light" />
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingHorizontal: pad, maxWidth: isWide ? 1120 : 560 },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.top}>
           <Text style={styles.mark}>{onAir ? "ROUTERADIO · VOYAGEFM" : "ROUTERADIO"}</Text>
           <OnAirMark state={mark} />
         </View>
 
-        {onAir ? <OnAirBody store={store} place={place} speaking={speaking} /> : <IdleBody store={store} />}
+        {onAir ? (
+          <View style={isWide ? styles.columns : styles.stacked}>
+            <View style={isWide ? styles.colMain : null}>
+              <OnAirBody store={store} place={place} width={width} />
+            </View>
+            <View style={isWide ? styles.colSide : null}>
+              <BelowFold store={store} place={place} isWide={isWide} />
+            </View>
+          </View>
+        ) : (
+          <IdleBody store={store} width={width} isWide={isWide} />
+        )}
 
         {store.error ? <Text style={styles.error}>{store.error}</Text> : null}
-
-        {onAir ? <BelowFold store={store} place={place} /> : null}
       </ScrollView>
     </View>
   );
 }
 
-function IdleBody({ store }: { store: ReturnType<typeof usePlayerStore.getState> }) {
+function IdleBody({
+  store,
+  width,
+  isWide,
+}: {
+  store: ReturnType<typeof usePlayerStore.getState>;
+  width: number;
+  isWide: boolean;
+}) {
+  const heroSize = scaleType(width, 44, 76, 0.13);
   return (
     <View style={styles.idle}>
-      <View style={styles.poster}>
-        <View style={styles.posterRule} />
+      <View style={[styles.poster, cardShadow]}>
+        {/* Soft accent glows instead of a solid poster field — depth
+            without a heavy block of flat color. */}
+        <View style={styles.posterGlow} />
+        <View style={styles.posterGlowLow} />
         <Text style={styles.markIdle}>ROUTERADIO</Text>
-        <Text style={styles.hero}>VoyageFM</Text>
-        <Text style={styles.waiting}>Waiting for a road.</Text>
+        <Text style={[styles.hero, { fontSize: heroSize, lineHeight: Math.round(heroSize * 1.05) }]}>
+          VoyageFM
+        </Text>
+        <Text style={styles.waiting}>
+          Your road, narrated live. Pick a route and the host takes it from there.
+        </Text>
       </View>
-      <View style={styles.startStack}>
+      <View style={[styles.startStack, isWide && styles.startRow]}>
         <BigButton label="Live GPS" tone="accent" onPress={() => void store.startLive()} />
         <BigButton label="Demo · Peja → Istog" onPress={() => void store.startDemo("peja-istog")} />
         <BigButton label="Demo · SF → Oakland" onPress={() => void store.startDemo("sf-oakland")} />
@@ -69,36 +118,40 @@ function IdleBody({ store }: { store: ReturnType<typeof usePlayerStore.getState>
 function OnAirBody({
   store,
   place,
-  speaking,
+  width,
 }: {
   store: ReturnType<typeof usePlayerStore.getState>;
   place: Place | null;
-  speaking: boolean;
+  width: number;
 }) {
   const next = store.context?.nearby.find((item) => item.id !== place?.id);
+  const placeSize = scaleType(width, 34, 56, 0.095);
   return (
     <View style={styles.onAir}>
-      <Text style={styles.place} numberOfLines={2}>
-        {place?.name ?? "This road"}
-      </Text>
-      <Text style={styles.hook} numberOfLines={1}>
-        {hookFor(place)}
-      </Text>
-      <View style={styles.hr} />
-      <View style={styles.host}>
-        <Text style={styles.cardKicker}>{speaking ? "ON AIR" : "NOW PLAYING"}</Text>
-        <Text style={styles.hostTitle} numberOfLines={1}>
-          {speaking ? store.script?.title ?? "On air" : "Music"}
+      <View>
+        <Text
+          style={[styles.place, { fontSize: placeSize, lineHeight: Math.round(placeSize * 1.08) }]}
+          numberOfLines={2}
+        >
+          {place?.name ?? "This road"}
         </Text>
-        <Text style={styles.hostLine} numberOfLines={3}>
-          {speaking
-            ? hostLine(store.script?.spokenText)
-            : next
-              ? `Next up · ${next.name}. The host cuts back in and the music ducks.`
-              : "The host cuts back in and the music ducks."}
+        <Text style={styles.hook} numberOfLines={1}>
+          {hookFor(place)}
         </Text>
       </View>
-      <View style={styles.hr} />
+      <View style={[styles.host, cardShadow]}>
+        <Text style={styles.cardKicker}>ON AIR</Text>
+        <Text style={styles.hostTitle} numberOfLines={1}>
+          {store.script?.title ?? "Coming on air"}
+        </Text>
+        <Text style={styles.hostLine} numberOfLines={3}>
+          {store.script
+            ? hostLine(store.script.spokenText)
+            : next
+              ? `Coming on through ${next.name}. Stay with the station.`
+              : "The host is coming on. Stay with the station."}
+        </Text>
+      </View>
       <View style={styles.grid}>
         <BigButton label="Stop" tone="stop" onPress={() => void store.stop()} />
         <BigButton label="Skip" onPress={() => void store.skipNarration()} />
@@ -112,23 +165,26 @@ function OnAirBody({
 function BelowFold({
   store,
   place,
+  isWide,
 }: {
   store: ReturnType<typeof usePlayerStore.getState>;
   place: Place | null;
+  isWide: boolean;
 }) {
   const pace = paceFromSpeed(store.point?.speedMps);
   const kmh = store.point?.speedMps != null ? Math.round(store.point.speedMps * 3.6) : 0;
   return (
     <View style={styles.below}>
-      <View style={styles.instrument}>
+      <View style={[styles.instrument, cardShadow]}>
         <CarMap
           point={store.point}
           label={place?.name}
           showDemoRoute={!store.live}
           route={store.demoPath}
           framed={false}
+          height={isWide ? 320 : 210}
         />
-        <View style={styles.hr} />
+        <View style={styles.hairline} />
         <View style={styles.statRow}>
           <StatCell label="Speed" value={`${kmh}`} unit="km/h" lead />
           <View style={styles.statDivider} />
@@ -171,9 +227,9 @@ function BelowFold({
   );
 }
 
-// A modular-grid instrument cell — equal-width, flush-left, a big Archivo
-// numeral over a small tracked label. This is a driving companion, so its
-// live telemetry gets read as data, not tucked away as a caption.
+// Equal-width instrument cells — a big numeral over a small tracked label.
+// This is a driving companion, so its live telemetry gets read as data,
+// not tucked away as a caption.
 function StatCell({ label, value, unit, lead }: { label: string; value: string; unit?: string; lead?: boolean }) {
   return (
     <View style={styles.statCell}>
@@ -196,7 +252,7 @@ function hookFor(place: Place | null): string {
 }
 
 function hostLine(text?: string | null): string {
-  if (!text) return "Host standby";
+  if (!text) return "The host is coming on. Stay with the station.";
   const parts = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [text];
   const take = parts.slice(0, 3).join(" ");
   return take.length > 240 ? `${take.slice(0, 237).trimEnd()}…` : take;
@@ -211,12 +267,10 @@ function compass(deg?: number | null): string {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   scroll: {
-    padding: 24,
-    paddingTop: 52,
+    paddingTop: 56,
     paddingBottom: 48,
     gap: space.xl,
     width: "100%",
-    maxWidth: 430,
     alignSelf: "center",
     minHeight: "100%",
   },
@@ -224,70 +278,91 @@ const styles = StyleSheet.create({
   mark: {
     fontFamily: fonts.mark,
     color: colors.muted,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
-    letterSpacing: 4.2,
+    letterSpacing: 3.6,
   },
-  idle: { flexGrow: 1, minHeight: 560, justifyContent: "space-between" },
-  // The one poster moment on this screen — a full accent field with
-  // display-grade type, the same license the system gives the deck's
-  // section dividers and the landing's closing banner. Bleeds past the
-  // scroll's own side padding so the field actually reads as a field.
+  // Two-column co-pilot layout on wide screens; single fluid column otherwise.
+  columns: { flexDirection: "row", gap: space.xl, alignItems: "flex-start" },
+  colMain: { flex: 1, minWidth: 0 },
+  colSide: { flex: 1, minWidth: 0 },
+  stacked: { gap: space.xl },
+  idle: { flexGrow: 1, minHeight: 560, justifyContent: "space-between", gap: space.xl },
   poster: {
-    marginHorizontal: -24,
-    paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 44,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.panelAlt,
+    borderRadius: radius.card,
+    borderWidth: ruleWidth,
+    borderColor: colors.divider,
+    paddingHorizontal: 28,
+    paddingTop: 44,
+    paddingBottom: 40,
+    overflow: "hidden",
   },
-  posterRule: { width: 56, height: ruleWidth * 2, backgroundColor: colors.onAccent },
+  posterGlow: {
+    position: "absolute",
+    top: -140,
+    right: -90,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: colors.accent,
+    opacity: 0.18,
+  },
+  posterGlowLow: {
+    position: "absolute",
+    bottom: -160,
+    left: -110,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: colors.accent,
+    opacity: 0.08,
+  },
   markIdle: {
     fontFamily: fonts.mark,
-    color: colors.onAccentSoft,
-    fontSize: 14,
+    color: colors.accent,
+    fontSize: 13,
     fontWeight: "700",
-    letterSpacing: 4.5,
-    marginTop: 22,
+    letterSpacing: 4,
   },
   hero: {
     fontFamily: fonts.body,
-    color: colors.onAccent,
-    fontSize: 56,
+    color: colors.text,
     fontWeight: "900",
-    letterSpacing: -1,
-    marginTop: 6,
+    letterSpacing: -1.5,
+    marginTop: 8,
   },
   waiting: {
     fontFamily: fonts.body,
-    color: colors.onAccentSoft,
-    fontSize: 18,
+    color: colors.inkSoft,
+    fontSize: 17,
     fontWeight: "500",
-    marginTop: 18,
+    lineHeight: 25,
+    marginTop: 16,
+    maxWidth: 420,
   },
   startStack: { gap: 12 },
-  onAir: { gap: 12 },
+  startRow: { flexDirection: "row", flexWrap: "wrap" },
+  onAir: { gap: space.md },
   place: {
     fontFamily: fonts.body,
     color: colors.text,
-    fontSize: 44,
     fontWeight: "900",
     letterSpacing: -0.8,
-    lineHeight: 46,
-    marginTop: 36,
+    marginTop: 12,
   },
   hook: {
     fontFamily: fonts.body,
-    color: colors.inkSoft,
+    color: colors.muted,
     fontSize: 17,
     fontWeight: "600",
-    marginTop: 4,
+    marginTop: 6,
   },
-  // A strong 2px rule between major sections — "let the grid show" instead
-  // of leaning on whitespace alone to separate blocks.
-  hr: { height: ruleWidth, backgroundColor: colors.divider },
   host: {
     backgroundColor: colors.surface,
     borderRadius: radius.card,
+    borderWidth: ruleWidth,
+    borderColor: colors.divider,
     padding: space.lg,
     gap: space.xs,
   },
@@ -308,15 +383,13 @@ const styles = StyleSheet.create({
   hostLine: {
     fontFamily: fonts.body,
     color: colors.inkSoft,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "500",
-    lineHeight: 25,
+    lineHeight: 24,
   },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
-  below: { gap: 16, paddingTop: 8, borderTopWidth: ruleWidth, borderTopColor: colors.divider },
-  // The map and its live telemetry read as one instrument, map on top,
-  // a row of equal-width data cells underneath — the modular grid doing
-  // the organising instead of a caption line doing the explaining.
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 4 },
+  below: { gap: space.md },
+  // Map + live telemetry as one rounded instrument card.
   instrument: {
     borderWidth: ruleWidth,
     borderColor: colors.divider,
@@ -324,6 +397,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: colors.surface,
   },
+  hairline: { height: ruleWidth, backgroundColor: colors.divider },
   statRow: { flexDirection: "row" },
   statCell: { flex: 1, paddingVertical: space.sm, paddingHorizontal: space.sm },
   statDivider: { width: ruleWidth, backgroundColor: colors.divider },
@@ -353,17 +427,17 @@ const styles = StyleSheet.create({
   chip: {
     minHeight: 44,
     justifyContent: "center",
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     borderWidth: ruleWidth,
     borderColor: colors.divider,
-    borderRadius: radius.btn,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
   },
-  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { fontFamily: fonts.body, color: colors.inkSoft, fontWeight: "700", fontSize: 16 },
-  chipTextOn: { color: colors.onAccent },
+  chipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
+  chipText: { fontFamily: fonts.body, color: colors.inkSoft, fontWeight: "700", fontSize: 15 },
+  chipTextOn: { color: colors.accent },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  // Paragraph-size text in the accent reads better a deep ramp step
-  // (--color-accent-700) than the accent itself — the accent/ground pair
-  // is only tuned to ~3:1, enough for chrome, not for body copy.
-  error: { color: accentRamp[700], fontSize: 15, fontFamily: fonts.body },
+  // Light ramp step for body-size text on the dark ground — the raw accent
+  // is tuned for chrome, not paragraphs.
+  error: { color: accentRamp[300], fontSize: 15, fontFamily: fonts.body },
 });

@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text } from "react-native";
 
-import { colors, fonts, headingWeight, radius, ruleWidth } from "../theme";
+import { colors, fonts, radius, ruleWidth } from "../theme";
 
 export function BigButton({
   label,
@@ -19,15 +19,17 @@ export function BigButton({
       accessibilityRole="button"
       onPress={onPress}
       disabled={disabled}
+      android_ripple={{ color: primary ? colors.onAccentSoft : colors.accentSoft }}
       style={({ pressed }) => [
         styles.btn,
         primary
           ? { backgroundColor: pressed ? colors.accentPressed : colors.accent }
           : {
-              backgroundColor: "transparent",
+              backgroundColor: pressed ? colors.panelAlt : colors.surface,
               borderWidth: ruleWidth,
-              borderColor: pressed ? colors.accent : colors.divider,
+              borderColor: pressed ? colors.accentBorder : colors.divider,
             },
+        pressed ? styles.pressed : null,
         disabled ? styles.disabled : null,
       ]}
     >
@@ -41,15 +43,20 @@ const styles = StyleSheet.create({
     minHeight: 56,
     minWidth: 120,
     borderRadius: radius.btn,
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     flexGrow: 1,
+    flexBasis: 140,
+    overflow: "hidden",
   },
+  pressed: { transform: [{ scale: 0.98 }] },
   label: {
     fontFamily: fonts.body,
-    fontSize: 18,
-    fontWeight: headingWeight,
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    textAlign: "center",
   },
   disabled: { opacity: 0.45 },
 });

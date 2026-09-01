@@ -1,0 +1,40 @@
+name: security_backend_tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  security_backend_tests:
+    name: security_backend_tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Pytest
+        env:
+          LLM_PROVIDER: gemini
+        run: pytest -q
+      - name: Secrets must not be committed
+        working-directory: ${{ github.workspace }}
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "committed .env" >&2
+            exit 1
+          fi
+          if grep -RInE 'AIza[0-9A-Za-z_-]{30,}|sk-ant-[a-zA-Z0-9_-]{20,}' \
+            --exclude-dir=.git --exclude-dir=.venv --exclude-dir=node_modules \
+            --exclude-dir=dist --exclude='*.lock' .; then
+            echo "possible API key in the tree" >&2
+            exit 1
+          fi

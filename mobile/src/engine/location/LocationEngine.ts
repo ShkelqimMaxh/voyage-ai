@@ -64,9 +64,11 @@ export class LocationEngine {
   }
 
   startDemo(
-    route = PEJA_ISTOG_ROAD_WAYPOINTS,
-    durationMs = PEJA_ISTOG_DURATION_MS,
-    speedMps = PEJA_ISTOG_SPEED_MPS,
+    // Typed explicitly: inferred from the default, `route` would narrow to the
+    // Peja polyline's literal coordinates and reject every other demo route.
+    route: Array<{ latitude: number; longitude: number }> = PEJA_ISTOG_ROAD_WAYPOINTS,
+    durationMs: number = PEJA_ISTOG_DURATION_MS,
+    speedMps: number = PEJA_ISTOG_SPEED_MPS,
   ): void {
     this.stop();
     const started = Date.now();

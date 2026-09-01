@@ -33,6 +33,31 @@ npx expo start
 
 Use **Demo drive (Peja → Istog)** on the Now Playing screen to walk the Dukagjini corridor without a car. Web preview is supported for the driver UI.
 
+### Testing "Live GPS" on a real phone, on a real drive
+
+The host needs the backend for every clip. Two setups work; a bare `localhost`
+backend does not, because the phone is a different device than your laptop:
+
+- **Same Wi-Fi, still parked in the driveway:** run the backend with
+  `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` (not just
+  `--port 8000` — the default only listens on the laptop itself) and open the
+  Expo web URL from the phone's browser. The client now rewrites a
+  `localhost` `EXPO_PUBLIC_API_URL` to whatever host the page was loaded
+  from, so no `.env` edits are needed per network.
+- **Actually driving:** the phone has no Wi-Fi to your laptop once you leave
+  the house, so point `EXPO_PUBLIC_API_URL` at the deployed Railway backend
+  instead (see below) and use that URL from the phone.
+
+Either way, run `./scripts/probe-pipeline.sh [BASE_URL]` first — it replays
+the app's exact "hit play" sequence (opener TTS, script generate, clip TTS)
+and prints RED/GREEN. If it's RED, the app will be silent no matter what the
+client does. The most common cause: the backend has no LLM key, so
+`/health` reports `"gemini": false` — set `GEMINI_API_KEY` (or
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) as an environment variable on
+whichever backend the phone is actually talking to (Railway's dashboard,
+not just the local `.env`, since Railway does not read this repo's `.env`
+file).
+
 ### Native CarPlay / ducking
 
 CarPlay and hardware ducking require a **dev client** (`npx expo prebuild && npx expo run:ios`). Simulator CarPlay: Xcode → I/O → External Displays → CarPlay. Apple must approve the Audio CarPlay entitlement before a device build will appear on a head unit.

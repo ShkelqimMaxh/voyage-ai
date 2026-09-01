@@ -116,7 +116,9 @@ async def _gemini_tts(text: str, voice: str, model: str, api_key: str) -> bytes:
                 },
             )
             if response.status_code >= 400:
-                last_error = f"Gemini TTS HTTP {response.status_code}"
+                # Keep the upstream reason. A bare "Internal Server Error" makes a
+                # quota wall look identical to an outage or a bad key.
+                last_error = f"Gemini TTS HTTP {response.status_code} ({candidate}): {response.text[:200]}"
                 continue
             part = response.json()["candidates"][0]["content"]["parts"][0]
             inline = part.get("inlineData") or part.get("inline_data") or {}

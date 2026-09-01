@@ -10,6 +10,11 @@ import { routeCache } from "../engine/cache/RouteCache";
 import { GeofenceManager } from "../engine/location/GeofenceManager";
 import { locationEngine } from "../engine/location/LocationEngine";
 import { PEJA_ISTOG_DURATION_MS, PEJA_ISTOG_ROAD_WAYPOINTS, PEJA_ISTOG_SPEED_MPS } from "../engine/location/pejaIstogDemo";
+import {
+  PRISHTINA_SKOPJE_DURATION_MS,
+  PRISHTINA_SKOPJE_SPEED_MPS,
+  PRISHTINA_SKOPJE_WAYPOINTS,
+} from "../engine/location/prishtinaSkopjeDemo";
 import { SF_OAKLAND_WAYPOINTS, US_DEMO_DURATION_MS, US_DEMO_SPEED_MPS } from "../engine/location/usDemoRoute";
 import { lookaheadPlaces } from "../engine/location/RouteMatcher";
 import { roadPlace } from "../engine/scripting/fillScript";
@@ -18,6 +23,32 @@ import { ttsService } from "../engine/tts/TtsService";
 import { fetchWeather } from "../engine/weather/WeatherService";
 
 const geofence = new GeofenceManager();
+
+export type DemoRouteId = "peja-istog" | "sf-oakland" | "prishtina-skopje";
+
+const DEMO_ROUTES: Record<
+  DemoRouteId,
+  { path: Array<{ latitude: number; longitude: number }>; durationMs: number; speedMps: number; seedName: string }
+> = {
+  "peja-istog": {
+    path: PEJA_ISTOG_ROAD_WAYPOINTS,
+    durationMs: PEJA_ISTOG_DURATION_MS,
+    speedMps: PEJA_ISTOG_SPEED_MPS,
+    seedName: "Peja",
+  },
+  "sf-oakland": {
+    path: SF_OAKLAND_WAYPOINTS,
+    durationMs: US_DEMO_DURATION_MS,
+    speedMps: US_DEMO_SPEED_MPS,
+    seedName: "San Francisco",
+  },
+  "prishtina-skopje": {
+    path: PRISHTINA_SKOPJE_WAYPOINTS,
+    durationMs: PRISHTINA_SKOPJE_DURATION_MS,
+    speedMps: PRISHTINA_SKOPJE_SPEED_MPS,
+    seedName: "Prishtina",
+  },
+};
 
 interface PlayerState {
   live: boolean;
@@ -32,7 +63,7 @@ interface PlayerState {
   error?: string;
   busy: boolean;
   demoPath: Array<{ latitude: number; longitude: number }>;
-  startDemo: (route?: "peja-istog" | "sf-oakland") => Promise<void>;
+  startDemo: (route?: DemoRouteId) => Promise<void>;
   startLive: () => Promise<void>;
   stop: () => Promise<void>;
   setTopic: (topic: Topic) => void;
@@ -61,12 +92,27 @@ let pumping = false;
 
 type ReadyClip = { script: NarrationScript; place: Place };
 
+/** How many of the most recent clips in a row were about this same place. */
+function trailingStreak(id: string): number {
+  let streak = 0;
+  for (let i = previousIds.length - 1; i >= 0 && previousIds[i] === id; i -= 1) streak += 1;
+  return streak;
+}
+
 function pickPlace(get: () => PlayerState): Place {
   const context = get().context;
   const current = context?.current ?? null;
   const nearby = (context?.nearby ?? []).filter((item) => item.id !== current?.id);
-  if (topicIndex % 4 === 3 && nearby[0]) return nearby[0];
-  return roadPlace(get().point, current);
+  const here = roadPlace(get().point, current);
+  // Stuck in traffic, the same place resolves clip after clip. Two clips about
+  // one village is plenty; a third is where the host starts re-describing the
+  // street it already named. Look around instead — the backend still refuses to
+  // re-introduce a place it has covered, but this keeps it from having to.
+  const streak = trailingStreak(here.id);
+  if (nearby.length > 0 && (streak >= 2 || topicIndex % 4 === 3)) {
+    return nearby[streak % nearby.length];
+  }
+  return here;
 }
 
 function nextTopic(): Topic {
@@ -136,6 +182,8 @@ async function resolveVoice(script: NarrationScript): Promise<NarrationScript> {
 }
 
 async function prepareClip(get: () => PlayerState, place: Place, topic: Topic): Promise<ReadyClip> {
+  previousIds.push(place.id);
+  if (previousIds.length > 8) previousIds.shift();
   const script = await enqueueScript(async () => {
     const next = await withDeadline(buildScript(get, place, topic), 60000);
     rememberSaid(next.spokenText);
@@ -183,8 +231,6 @@ async function playClip(
     set({ error: error instanceof Error ? error.message : "Playback failed" });
   }
   rememberSaid(script.spokenText);
-  previousIds.push(place.id);
-  if (previousIds.length > 8) previousIds.shift();
 }
 
 async function runHostForever(set: (partial: Partial<PlayerState>) => void, get: () => PlayerState): Promise<void> {
@@ -304,7 +350,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   musicOn: true,
   demoPath: PEJA_ISTOG_ROAD_WAYPOINTS,
 
-  async startDemo(routeId: "peja-istog" | "sf-oakland" = "peja-istog") {
+  async startDemo(routeId: DemoRouteId = "peja-istog") {
     await get().stop();
     await audioMixer.prepare(get().audioMode, true);
     unphase = audioMixer.onPhase((phase) => set({ phase }));
@@ -322,11 +368,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     alreadySaid.length = 0;
     topicIndex = 0;
     scriptTail = Promise.resolve();
-    const path = routeId === "sf-oakland" ? SF_OAKLAND_WAYPOINTS : PEJA_ISTOG_ROAD_WAYPOINTS;
-    const durationMs = routeId === "sf-oakland" ? US_DEMO_DURATION_MS : PEJA_ISTOG_DURATION_MS;
-    const speedMps = routeId === "sf-oakland" ? US_DEMO_SPEED_MPS : PEJA_ISTOG_SPEED_MPS;
+    const { path, durationMs, speedMps, seedName } = DEMO_ROUTES[routeId] ?? DEMO_ROUTES["peja-istog"];
     const start = path[0];
-    const seedName = routeId === "sf-oakland" ? "San Francisco" : "Peja";
     set({
       demo: true,
       live: false,

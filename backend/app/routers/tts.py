@@ -12,7 +12,12 @@ router = APIRouter(prefix="/v1/tts", tags=["tts"])
 
 @router.post("/render", response_model=TtsResponse)
 async def render(request: TtsRequest) -> TtsResponse:
-    return await render_tts(request)
+    try:
+        return await render_tts(request)
+    except RuntimeError as exc:
+        # 502, not 500: the voice provider failed, and the client deserves to know
+        # which one and why so a quota wall is one curl away from being obvious.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/files/{name}")

@@ -61,7 +61,27 @@ GENERIC_FILLER = (
     "deep sense of",
     "making a living directly",
     "community here has",
+    # Tics observed on the Prishtina-Skopje drive: every one of these fits any
+    # village on earth, which is exactly why the model reaches for them.
+    "daily rhythm",
+    "you really get a sense",
+    "you really see",
+    "comings and goings",
+    "day-to-day",
+    "the fabric of",
+    "going about their",
+    "constant flow",
+    "steady rhythm",
+    "keeps the village",
+    "a real sense of",
+    "people making their way",
+    "hands-on",
+    "livelihoods",
+    "you often see people",
+    "everyday flow",
 )
+# Openers that mean the host is winding up instead of talking.
+BANNED_OPENERS = ("alright", "okay", "so ", "well ", "and here", "right here")
 PLACE_ANGLES = ("daily_life", "food", "one_landmark", "work_people")
 ANGLES = ("daily_life", "food", "one_landmark", "work_people", "one_landscape")
 ANGLE_FACT = {
@@ -113,6 +133,53 @@ def pick_angle(request: ScriptRequest) -> str:
     return "daily_life"
 
 
+def times_here(request: ScriptRequest) -> int:
+    """How many clips the host has already aired about THIS place.
+
+    The client sends the places it has already queued, newest last. Stuck in
+    traffic, the same id repeats — that is the signal that the driver has heard
+    the introduction already and needs a genuinely new subject, not the same
+    place described from another angle.
+    """
+    return sum(1 for item in (request.previous_place_ids or []) if item == request.place.id)
+
+
+def _first_words(text: str, count: int = 5) -> str:
+    words = re.findall(r"[\w']+", text.lower())
+    return " ".join(words[:count])
+
+
+def _repeats_opening(spoken: str, already: list[str]) -> bool:
+    """Four clips in a row opening 'Here in Chucher-Sandevo,' is the bug."""
+    if not already:
+        return False
+    opening = _first_words(spoken)
+    if not opening:
+        return False
+    return any(_first_words(previous) == opening for previous in already)
+
+
+def _reintroduces(spoken: str, request: ScriptRequest, local: dict | None, visits: int) -> bool:
+    """On a repeat visit, naming the place or the street again is the duplicate."""
+    if visits < 1:
+        return False
+    head = " ".join(spoken.split()[:22]).lower().replace("ë", "e")
+    name = (request.place.name or "").lower().replace("ë", "e")
+    if name and name in head:
+        return True
+    street = (request.place.road_name or (local or {}).get("street") or "").lower().replace("ë", "e")
+    if street:
+        tokens = [part for part in street.split() if len(part) >= 4]
+        if tokens and all(part in spoken.lower().replace("ë", "e") for part in tokens):
+            return True
+    return False
+
+
+def _bad_opener(spoken: str) -> bool:
+    head = spoken.strip().lower()
+    return any(head.startswith(word) for word in BANNED_OPENERS)
+
+
 def _too_similar(spoken: str, already: list[str]) -> bool:
     if not already:
         return False
@@ -125,7 +192,12 @@ def _generic_filler(spoken: str) -> bool:
     return sum(1 for phrase in GENERIC_FILLER if phrase in blob) >= 2
 
 
-def _missing_unique(spoken: str, request: ScriptRequest, local: dict | None) -> bool:
+def _missing_unique(spoken: str, request: ScriptRequest, local: dict | None, visits: int = 0) -> bool:
+    # Only the FIRST clip about a place owes the street name. Forcing it into
+    # every clip is what produced "we're still on Arben Xhaferi street" five
+    # times in a row.
+    if visits >= 1:
+        return False
     blob = spoken.lower()
     street = (request.place.road_name or (local or {}).get("street") or "").strip()
     means = ((local or {}).get("name_means") or "").strip()
@@ -240,6 +312,7 @@ def _script_from_model(request: ScriptRequest, data: dict, source: str) -> Narra
 def _packet(request: ScriptRequest) -> dict:
     settings = get_settings()
     local = _lookup_local(request.place)
+    visits = times_here(request)
     place = request.place.model_dump()
     place.pop("address_line", None)
     banned = used_hooks(request.already_said)
@@ -267,8 +340,13 @@ def _packet(request: ScriptRequest) -> dict:
             "street_note": (local or {}).get("street_note"),
         },
         "seeded_local_fact": knowledge.fact_for(local, fact_topic) if local else None,
+        "times_here": visits,
+        "already_introduced": visits >= 1,
+        "do_not_open_with": [_first_words(item, 6) for item in request.already_said[-6:]],
         "briefing": {
-            "known_text": None if request.already_said else (request.place.wikipedia_extract or request.place.summary),
+            # Always hand over what we know. Withholding this on continuations
+            # left the model with nothing but generic village copy to write.
+            "known_text": request.place.wikipedia_extract or request.place.summary,
             "wikipedia_title": request.place.wikipedia_title,
             "on_the_ground": request.place.landmarks,
             "locator": locator,
@@ -277,13 +355,24 @@ def _packet(request: ScriptRequest) -> dict:
         "do_not_repeat": banned,
         "continuation": request.continuation,
         "instruction": (
-            f"Angle is {angle}. Use this_place_owns. "
-            f"Never mention: {', '.join(banned) or 'nothing yet'}. "
-            "Name the street and/or what the place-name means. "
-            "The Peja–Istog pavement looks the same — do not narrate the road. "
-            "Do not write a generic working-village paragraph. "
-            "Do not recap Peja or Istog greatest hits unless this place is that town "
-            "and the hook has not been used."
+            (
+                f"REPEAT VISIT — clip number {visits + 1} about {request.place.name}. "
+                "The driver has already heard the name of this place and the street. "
+                "Do NOT say either again. Open straight into a NEW subject: who a "
+                "name honours and what they did, what the place is actually known "
+                "for, a number, a year, an institution. If you have nothing new and "
+                "true left about this exact spot, talk about the next place ahead "
+                "or a named thing you can see from here — never re-describe this one."
+                if visits >= 1
+                else "First clip about this place. Name it, then the street name "
+                "and/or what the place-name means, then one more concrete noun."
+            )
+            + f" Angle is {angle}. Use this_place_owns. "
+            + f"Never mention: {', '.join(banned) or 'nothing yet'}. "
+            + "Do not narrate the pavement, the traffic or people walking about. "
+            + "Do not write a generic working-village paragraph. "
+            + "Do not recap Peja or Istog greatest hits unless this place is that town "
+            + "and the hook has not been used."
         ),
     }
 
@@ -354,13 +443,16 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
     request.locale = "en"
     cache_key = cache.make_key(
         "script",
-        "var4",
+        "var5",
         request.place.id,
         request.place.name,
         request.topic.value,
         request.expand,
         "en",
         request.pace.value,
+        # A second clip about the same place must never be served the first
+        # clip's text back out of the cache.
+        str(times_here(request)),
         request.already_said[-1] if request.already_said else "",
     )
     cached = None if request.continuation else cache.get_json(cache_key)
@@ -382,18 +474,35 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
                 data = await _gemini(request, user)
             script = _script_from_model(request, data, provider)
             local = _lookup_local(request.place)
-            needs_retry = (
-                _too_similar(script.spoken_text, request.already_said)
-                or _generic_filler(script.spoken_text)
-                or _missing_unique(script.spoken_text, request, local)
-            )
-            if needs_retry:
+            visits = times_here(request)
+            reasons = []
+            if _reintroduces(script.spoken_text, request, local, visits):
+                reasons.append("you re-introduced a place the driver already knows")
+            if _repeats_opening(script.spoken_text, request.already_said):
+                reasons.append("you opened with the same words as an earlier clip")
+            if _bad_opener(script.spoken_text):
+                reasons.append("you opened with a filler word instead of the fact")
+            if _too_similar(script.spoken_text, request.already_said):
+                reasons.append("you reused a subject already covered")
+            if _generic_filler(script.spoken_text):
+                reasons.append("you wrote interchangeable village padding")
+            if _missing_unique(script.spoken_text, request, local, visits):
+                reasons.append("you left out the street name or what the place-name means")
+            if reasons:
                 retry_user = build_user_prompt(
                     {
                         **_packet(request),
                         "instruction": (
-                            "REWRITE. Say the street name and/or what the place-name means. "
-                            "No generic working-village paragraph. "
+                            f"REWRITE — {'; '.join(reasons)}. "
+                            + (
+                                "This is a repeat visit: do NOT name the place or the "
+                                "street again, open straight into a different subject. "
+                                if visits >= 1
+                                else "Say the street name and/or what the place-name means. "
+                            )
+                            + "Give one concrete, checkable thing: who a name honours and "
+                            "what they did, what this place is known for, a number, a year. "
+                            "No generic working-village paragraph, no describing traffic. "
                             f"Banned: {', '.join(used_hooks(request.already_said + [script.spoken_text]))}."
                         ),
                     }

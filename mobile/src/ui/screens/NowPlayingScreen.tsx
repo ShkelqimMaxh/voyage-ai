@@ -110,6 +110,7 @@ function IdleBody({
         <BigButton label="Live GPS" tone="accent" onPress={() => void store.startLive()} />
         <BigButton label="Demo · Peja → Istog" onPress={() => void store.startDemo("peja-istog")} />
         <BigButton label="Demo · SF → Oakland" onPress={() => void store.startDemo("sf-oakland")} />
+        <BigButton label="Demo · Prishtina → Skopje" onPress={() => void store.startDemo("prishtina-skopje")} />
       </View>
     </View>
   );

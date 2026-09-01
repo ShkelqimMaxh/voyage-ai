@@ -12,11 +12,23 @@ const localhost = Platform.select({
 
 function apiUrl(): string {
   const fromEnv = env("EXPO_PUBLIC_API_URL");
-  if (fromEnv) return fromEnv;
   if (typeof window !== "undefined") {
-    const origin = window.location.origin;
-    if (origin && !/localhost|127\.0\.0\.1/.test(origin)) return origin;
+    const pageHost = window.location.hostname;
+    const onDevice = Boolean(pageHost) && !/localhost|127\.0\.0\.1/.test(pageHost);
+    // EXPO_PUBLIC_API_URL is baked in at bundle time and defaults to the dev
+    // machine's own loopback address. That's unreachable from a phone that
+    // loaded the page over LAN (or is out driving on cellular) — every
+    // request fails silently and the host never says a word. If the page
+    // itself isn't on localhost, prefer the page's own host/origin instead.
+    if (onDevice) {
+      if (fromEnv && /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(fromEnv)) {
+        return fromEnv.replace(/(localhost|127\.0\.0\.1)/, pageHost);
+      }
+      const origin = window.location.origin;
+      if (!fromEnv && origin) return origin;
+    }
   }
+  if (fromEnv) return fromEnv;
   return localhost ?? "http://localhost:8000";
 }
 

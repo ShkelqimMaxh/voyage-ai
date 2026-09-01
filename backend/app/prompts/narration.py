@@ -89,6 +89,9 @@ properly, not hearing six disconnected trivia cards.
   going", "a real sense of", "people making their way".
 - Describing traffic, pavement, or people walking around as if it were content.
   Everyone in the car can already see that. It is not a fact.
+- Naming anyone in names_already_spent. Those people have been covered. A new
+  clip about the same person is the same clip, however differently you word it —
+  find a different human being, or a different kind of fact.
 - Repeating anything in do_not_repeat, already_said, or
   already_covered_do_not_say_again. That last list is what the driver has
   already been told about this exact place — the name meaning, the street, the

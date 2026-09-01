@@ -232,6 +232,61 @@ def _reintroduces(spoken: str, request: ScriptRequest, local: dict | None, visit
     return False
 
 
+PROPER_NAME = re.compile(r"\b([A-ZËÇ][\wëç'’-]+(?:\s+[A-ZËÇ][\wëç'’-]+){1,2})\b")
+
+
+def spent_names(covered: list[str]) -> list[str]:
+    """People and places the ledger says the host has already named.
+
+    "Mirsad Idrizaj, KLA fighter killed in action" is filed after slot one; he is
+    spent from then on, and naming him a fourth time is the repetition however
+    fresh the sentence around him is.
+    """
+    found: list[str] = []
+    for line in covered or []:
+        for match in PROPER_NAME.findall(line):
+            if match not in found:
+                found.append(match)
+    return found
+
+
+def _repeats_spent_name(spoken: str, covered: list[str]) -> str | None:
+    flat = spoken.lower()
+    for name in spent_names(covered):
+        if name.lower() in flat:
+            return name
+    return None
+
+
+LOCATOR = re.compile(
+    r"(?i)\b(we(?:'| a)re (?:in|on|now|currently|driving)|we've (?:just )?entered|"
+    r"here (?:in|on)|this is|welcome to|passing through|driving (?:on|along|through)|"
+    r"as we (?:enter|drive)|our road|the (?:main )?road we're on|street)\b"
+)
+
+
+def strip_locator_sentences(spoken: str, request: ScriptRequest, local: dict | None) -> str:
+    """Drop any sentence whose job is to re-state where we are.
+
+    Not just the opening one: four of eleven street mentions on the last drive
+    sat in the middle of a clip, where a lead-only trim never reached them.
+    Sentences that merely carry the name in passing are left alone.
+    """
+    name = (request.place.name or "").lower().replace("ë", "e")
+    street = (request.place.road_name or (local or {}).get("street") or "").lower().replace("ë", "e")
+    street_tokens = [part for part in street.split() if len(part) >= 4]
+    kept: list[str] = []
+    for sentence in re.split(r"(?<=[.!?])\s+", spoken.strip()):
+        flat = sentence.lower().replace("ë", "e")
+        names_place = bool(name) and name in flat
+        names_street = bool(street_tokens) and all(part in flat for part in street_tokens)
+        if (names_place or names_street) and LOCATOR.search(sentence):
+            continue
+        kept.append(sentence)
+    trimmed = " ".join(kept).strip()
+    return trimmed if len(trimmed.split()) >= 25 else spoken.strip()
+
+
 def strip_reintroduction(spoken: str, request: ScriptRequest, local: dict | None) -> str:
     """Delete a re-introducing lead sentence instead of paying for a rewrite.
 
@@ -402,6 +457,13 @@ def _packet(request: ScriptRequest) -> dict:
     visits = times_here(request)
     place = request.place.model_dump()
     place.pop("address_line", None)
+    if visits:
+        # Nulling unique_nouns was not enough: the raw place dump handed the
+        # model the street name again (road_name, plus a summary that IS the
+        # street address), so it kept saying it. It cannot repeat a noun it is
+        # never given.
+        place.pop("road_name", None)
+        place["summary"] = None
     banned = used_hooks(request.already_said)
     angle = pick_angle(request)
     fact_topic = ANGLE_FACT.get(angle, request.topic.value)
@@ -435,6 +497,7 @@ def _packet(request: ScriptRequest) -> dict:
         # phrased, and eight points cost a fraction of eight scripts.
         "you_already_told_them_here": (request.already_covered_here or request.already_said_here or [])[-8:],
         "required_subject": SUBJECT_LADDER[min(visits, len(SUBJECT_LADDER) - 1)],
+        "names_already_spent": spent_names(request.already_covered_here),
         "already_covered_do_not_say_again": [
             item
             for item in (
@@ -452,7 +515,7 @@ def _packet(request: ScriptRequest) -> dict:
         "briefing": {
             # Always hand over what we know. Withholding this on continuations
             # left the model with nothing but generic village copy to write.
-            "known_text": request.place.wikipedia_extract or request.place.summary,
+            "known_text": request.place.wikipedia_extract or (None if visits else request.place.summary),
             "wikipedia_title": request.place.wikipedia_title,
             "on_the_ground": request.place.landmarks,
             "locator": locator,
@@ -581,13 +644,18 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
             script = _script_from_model(request, data, provider)
             local = _lookup_local(request.place)
             visits = times_here(request)
-            if visits >= 1 and _reintroduces(script.spoken_text, request, local, visits):
-                # Free fix first. Only if cutting the lead leaves nothing worth
-                # airing do we spend a second model call.
-                trimmed = strip_reintroduction(script.spoken_text, request, local)
-                if len(trimmed.split()) >= 25:
-                    script.spoken_text = trimmed
+            if visits >= 1:
+                # Free fixes first. Only if trimming leaves nothing worth airing
+                # do we spend a second model call.
+                script.spoken_text = strip_locator_sentences(script.spoken_text, request, local)
+                if _reintroduces(script.spoken_text, request, local, visits):
+                    trimmed = strip_reintroduction(script.spoken_text, request, local)
+                    if len(trimmed.split()) >= 25:
+                        script.spoken_text = trimmed
             reasons = []
+            spent = _repeats_spent_name(script.spoken_text, request.already_covered_here)
+            if spent:
+                reasons.append(f"you named {spent} again — the driver already heard about them")
             if _reintroduces(script.spoken_text, request, local, visits):
                 reasons.append("you re-introduced a place the driver already knows")
             if _repeats_opening(script.spoken_text, request.already_said):

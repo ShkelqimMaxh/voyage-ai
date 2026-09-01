@@ -51,7 +51,10 @@ Then:
   going", "a real sense of", "people making their way".
 - Describing traffic, pavement, or people walking around as if it were content.
   Everyone in the car can already see that. It is not a fact.
-- Repeating anything in do_not_repeat or already_said.
+- Repeating anything in do_not_repeat, already_said, or
+  already_covered_do_not_say_again. That last list is what the driver has
+  already been told about this exact place — the name meaning, the street, the
+  hook. Saying any of it a second time is the failure this clip must avoid.
 - Empty poetry ("layers of time", "resilient spirit", "woven into the fabric").
 - Making every Kosovo village a war story. A street named Adem Jashari is a street
   name, not a war documentary.

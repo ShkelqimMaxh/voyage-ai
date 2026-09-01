@@ -8,6 +8,7 @@ import { warmWebSpeech } from "../engine/audio/WebSpeechPlayer";
 import { carPlayBridge } from "../engine/carplay/CarPlayBridge";
 import { routeCache } from "../engine/cache/RouteCache";
 import { GeofenceManager } from "../engine/location/GeofenceManager";
+import { placeKey } from "../engine/location/placeKey";
 import { locationEngine } from "../engine/location/LocationEngine";
 import { PEJA_ISTOG_DURATION_MS, PEJA_ISTOG_ROAD_WAYPOINTS, PEJA_ISTOG_SPEED_MPS } from "../engine/location/pejaIstogDemo";
 import {
@@ -16,6 +17,11 @@ import {
   PRISHTINA_SKOPJE_WAYPOINTS,
 } from "../engine/location/prishtinaSkopjeDemo";
 import { SF_OAKLAND_WAYPOINTS, US_DEMO_DURATION_MS, US_DEMO_SPEED_MPS } from "../engine/location/usDemoRoute";
+import {
+  VRELLE_CERRCE_DURATION_MS,
+  VRELLE_CERRCE_SPEED_MPS,
+  VRELLE_CERRCE_WAYPOINTS,
+} from "../engine/location/vrelleCerrceDemo";
 import { lookaheadPlaces } from "../engine/location/RouteMatcher";
 import { roadPlace } from "../engine/scripting/fillScript";
 import { scriptService } from "../engine/scripting/ScriptService";
@@ -24,7 +30,7 @@ import { fetchWeather } from "../engine/weather/WeatherService";
 
 const geofence = new GeofenceManager();
 
-export type DemoRouteId = "peja-istog" | "sf-oakland" | "prishtina-skopje";
+export type DemoRouteId = "peja-istog" | "sf-oakland" | "prishtina-skopje" | "vrelle-cerrce";
 
 const DEMO_ROUTES: Record<
   DemoRouteId,
@@ -41,6 +47,12 @@ const DEMO_ROUTES: Record<
     durationMs: US_DEMO_DURATION_MS,
     speedMps: US_DEMO_SPEED_MPS,
     seedName: "San Francisco",
+  },
+  "vrelle-cerrce": {
+    path: VRELLE_CERRCE_WAYPOINTS,
+    durationMs: VRELLE_CERRCE_DURATION_MS,
+    speedMps: VRELLE_CERRCE_SPEED_MPS,
+    seedName: "Vrellë",
   },
   "prishtina-skopje": {
     path: PRISHTINA_SKOPJE_WAYPOINTS,
@@ -92,10 +104,15 @@ let pumping = false;
 
 type ReadyClip = { script: NarrationScript; place: Place };
 
-/** How many of the most recent clips in a row were about this same place. */
-function trailingStreak(id: string): number {
+/** How many of the most recent clips in a row were about this same village.
+ *
+ * Keyed on the settlement name, not the place id: reverse geocoding returns a
+ * different OSM node for almost every fix, so an id-based streak never counted
+ * past one and the host kept re-introducing the village it was already in.
+ */
+function trailingStreak(key: string): number {
   let streak = 0;
-  for (let i = previousIds.length - 1; i >= 0 && previousIds[i] === id; i -= 1) streak += 1;
+  for (let i = previousIds.length - 1; i >= 0 && previousIds[i] === key; i -= 1) streak += 1;
   return streak;
 }
 
@@ -108,7 +125,7 @@ function pickPlace(get: () => PlayerState): Place {
   // one village is plenty; a third is where the host starts re-describing the
   // street it already named. Look around instead — the backend still refuses to
   // re-introduce a place it has covered, but this keeps it from having to.
-  const streak = trailingStreak(here.id);
+  const streak = trailingStreak(placeKey(here));
   if (nearby.length > 0 && (streak >= 2 || topicIndex % 4 === 3)) {
     return nearby[streak % nearby.length];
   }
@@ -182,7 +199,7 @@ async function resolveVoice(script: NarrationScript): Promise<NarrationScript> {
 }
 
 async function prepareClip(get: () => PlayerState, place: Place, topic: Topic): Promise<ReadyClip> {
-  previousIds.push(place.id);
+  previousIds.push(placeKey(place));
   if (previousIds.length > 8) previousIds.shift();
   const script = await enqueueScript(async () => {
     const next = await withDeadline(buildScript(get, place, topic), 60000);
@@ -240,7 +257,10 @@ async function runHostForever(set: (partial: Partial<PlayerState>) => void, get:
   const queue: ReadyClip[] = [];
   let inflight = 0;
   let cooldownUntil = 0;
-  const ahead = 2;
+  // Writing a clip and rendering the studio voice runs ~45s against ~20s of
+  // speech. Two in hand is not enough to cover that; the queue drained and the
+  // Vrelle-Cerrce drive lost 4 of 11 minutes to dead air.
+  const ahead = 4;
 
   const prefetch = () => {
     if (Date.now() < cooldownUntil) return;

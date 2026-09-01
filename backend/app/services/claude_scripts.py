@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 import uuid
 
 import httpx
@@ -133,15 +134,52 @@ def pick_angle(request: ScriptRequest) -> str:
     return "daily_life"
 
 
+def place_key(name: str | None, fallback: str = "") -> str:
+    """Stable per-village key.
+
+    Reverse geocoding hands back a different OSM node for nearly every fix —
+    one drive through Vrelle produced ten ids for one village — so counting
+    repeat visits by id never matched and the host re-introduced the place
+    every single clip. Match on the settlement name instead.
+    """
+    raw = (name or fallback or "").split("/")[0].split("-")[0].strip().lower()
+    folded = unicodedata.normalize("NFKD", raw)
+    return "".join(ch for ch in folded if ch.isalnum() or ch.isspace()).strip() or (fallback or "").lower()
+
+
 def times_here(request: ScriptRequest) -> int:
     """How many clips the host has already aired about THIS place.
 
     The client sends the places it has already queued, newest last. Stuck in
-    traffic, the same id repeats — that is the signal that the driver has heard
-    the introduction already and needs a genuinely new subject, not the same
-    place described from another angle.
+    traffic the same village repeats — that is the signal that the driver has
+    heard the introduction already and needs a genuinely new subject, not the
+    same place described from another angle.
     """
-    return sum(1 for item in (request.previous_place_ids or []) if item == request.place.id)
+    key = place_key(request.place.name, request.place.id)
+    return sum(
+        1
+        for item in (request.previous_place_ids or [])
+        if item == request.place.id or place_key(item) == key
+    )
+
+
+def _shingles(text: str, size: int = 6) -> set[str]:
+    words = re.findall(r"[\w']+", text.lower().replace("ë", "e"))
+    return {" ".join(words[i : i + size]) for i in range(max(0, len(words) - size + 1))}
+
+
+def _repeats_phrase(spoken: str, already: list[str]) -> bool:
+    """Catches "the name itself means 'spring' in Albanian" for the seventh time.
+
+    used_hooks only knows a fixed Dukagjini vocabulary, so it never noticed the
+    host re-reading the same sentence about a street or a name meaning.
+    """
+    if not already:
+        return False
+    fresh = _shingles(spoken)
+    if not fresh:
+        return False
+    return any(fresh & _shingles(previous) for previous in already)
 
 
 def _first_words(text: str, count: int = 5) -> str:
@@ -289,6 +327,11 @@ def _scrub_spoken(text: str) -> str:
             continue
         if re.search(r"(?i)no break|still on the air|microphone open|specific, not generic", sentence):
             continue
+        # The offline pack's name_means fields carry authoring notes ("Use the
+        # Albanian name Cerrce", "This village owns that name"). The fallback
+        # path read those aloud to the driver.
+        if re.search(r"(?i)^(use|say|keep|do not|don't|never|avoid) the\b|owns that name|not a lecture|not a metaphor", sentence.strip()):
+            continue
         kept.append(sentence)
     return " ".join(kept).strip() or text.strip()
 
@@ -333,13 +376,27 @@ def _packet(request: ScriptRequest) -> dict:
         "expand": request.expand,
         "tone": settings.host_voice_tone,
         "previous_place_ids": request.previous_place_ids,
-        "this_place_owns": (local or {}).get("hook"),
+        "this_place_owns": None if visits else (local or {}).get("hook"),
+        # On a repeat visit these are exactly what the host already said. Feeding
+        # them back is what produced "Vrelle means spring" seven times in ten
+        # minutes: the packet handed over the same name-meaning and street every
+        # clip, and the prompt required them to be spoken.
         "unique_nouns": {
-            "place_name_means": (local or {}).get("name_means"),
-            "street_you_are_on": request.place.road_name or (local or {}).get("street"),
-            "street_note": (local or {}).get("street_note"),
+            "place_name_means": None if visits else (local or {}).get("name_means"),
+            "street_you_are_on": None if visits else (request.place.road_name or (local or {}).get("street")),
+            "street_note": None if visits else (local or {}).get("street_note"),
         },
-        "seeded_local_fact": knowledge.fact_for(local, fact_topic) if local else None,
+        "already_covered_do_not_say_again": [
+            item
+            for item in (
+                (local or {}).get("name_means"),
+                request.place.road_name or (local or {}).get("street"),
+                (local or {}).get("hook"),
+                request.place.name,
+            )
+            if visits and item
+        ],
+        "seeded_local_fact": None if visits else (knowledge.fact_for(local, fact_topic) if local else None),
         "times_here": visits,
         "already_introduced": visits >= 1,
         "do_not_open_with": [_first_words(item, 6) for item in request.already_said[-6:]],
@@ -395,7 +452,7 @@ async def _claude(request: ScriptRequest, user: str) -> dict:
 
 async def _openai(request: ScriptRequest, user: str) -> dict:
     settings = get_settings()
-    async with httpx.AsyncClient(timeout=25.0) as client:
+    async with httpx.AsyncClient(timeout=45.0) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {settings.openai_api_key}"},
@@ -420,7 +477,7 @@ async def _gemini(request: ScriptRequest, user: str) -> dict:
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{settings.gemini_model}:generateContent"
     )
-    async with httpx.AsyncClient(timeout=25.0) as client:
+    async with httpx.AsyncClient(timeout=45.0) as client:
         response = await client.post(
             url,
             headers={"x-goog-api-key": settings.gemini_api_key},
@@ -480,6 +537,8 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
                 reasons.append("you re-introduced a place the driver already knows")
             if _repeats_opening(script.spoken_text, request.already_said):
                 reasons.append("you opened with the same words as an earlier clip")
+            if _repeats_phrase(script.spoken_text, request.already_said):
+                reasons.append("you repeated a whole phrase the driver already heard")
             if _bad_opener(script.spoken_text):
                 reasons.append("you opened with a filler word instead of the fact")
             if _too_similar(script.spoken_text, request.already_said):

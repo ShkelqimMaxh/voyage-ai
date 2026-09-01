@@ -100,8 +100,17 @@ SUBJECT_LADDER = (
     "ground produced or buried. Same rules — a name and a deed.",
     "one named thing you can see or reach from here: a landmark, a river, a "
     "monastery, a gorge, a mill",
-    "how the place lives now: who works where, what changed in the last decade",
+    "what the place name and the surrounding names mean, and where they came from",
+    "how people here earn a living, specifically: which employer, which trade, "
+    "which market town they commute to",
+    "a building: a school, a mosque, a church, a mill, a bridge, a factory — what "
+    "it is, when it went up, what it is used for now",
+    "what the land itself does here: the soil, the water, what grows, what is dug",
+    "how the place lives now: what changed in the last decade",
+    "who governs and serves it: the municipality, the school it feeds, the clinic, "
+    "the football club, the bus that runs through",
 )
+
 PLACE_ANGLES = ("daily_life", "food", "one_landmark", "work_people")
 ANGLES = ("daily_life", "food", "one_landmark", "work_people", "one_landscape")
 ANGLE_FACT = {
@@ -233,6 +242,55 @@ def _reintroduces(spoken: str, request: ScriptRequest, local: dict | None, visit
 
 
 PROPER_NAME = re.compile(r"\b([A-ZËÇ][\wëç'’-]+(?:\s+[A-ZËÇ][\wëç'’-]+){1,2})\b")
+
+
+def required_subject(visits: int) -> str:
+    """What clip number `visits` must be about.
+
+    Indexing with min(visits, last) meant that from the seventh clip in one
+    village every clip got the same final rung — three clips in a row about
+    diaspora money on the last drive. The checklist now wraps, and once it has
+    wrapped the host is told plainly that novelty matters more than interest.
+    """
+    if visits < len(SUBJECT_LADDER):
+        return SUBJECT_LADDER[visits]
+    return (
+        "The checklist is spent. Anything at all that is NOT in "
+        "nothing_here_may_repeat: a smaller person, a duller building, a road "
+        "number, a stream's name, what the next village along is called. A boring "
+        "true thing they have not heard beats an interesting one they have. If you "
+        "genuinely have nothing left, say one short honest line about what is "
+        "ahead on this road and stop — do not pad, do not circle back."
+    )
+
+
+def _key_tokens(line: str) -> set:
+    words = re.findall(r"[\w']+", (line or "").lower().replace("ë", "e"))
+    return {w for w in words if len(w) >= 4 and w not in STOP_KEYS}
+
+
+STOP_KEYS = {
+    "this", "that", "here", "there", "with", "from", "they", "their", "them", "have",
+    "been", "were", "which", "what", "when", "about", "also", "very", "just", "still",
+    "these", "those", "into", "over", "some", "many", "much", "more", "most", "like",
+    "known", "local", "area", "place", "village", "town", "people", "years", "year",
+}
+
+
+def repeats_covered_point(covered_line: str, keys: list[str]) -> str | None:
+    """Does this clip teach something already taught?
+
+    Compares the model's own one-line summary against every point aired so far.
+    Two content words in common is a repeat — "Mother of God Monastery, Hvosno"
+    against "Monastery of the Mother of God, north of Peja" shares four.
+    """
+    fresh = _key_tokens(covered_line)
+    if len(fresh) < 2:
+        return None
+    for previous in keys or []:
+        if len(fresh & _key_tokens(previous)) >= 2:
+            return previous
+    return None
 
 
 def spent_names(covered: list[str]) -> list[str]:
@@ -509,8 +567,12 @@ def _packet(request: ScriptRequest) -> dict:
         # scripts: the host needs to know WHAT it covered, not re-read how it was
         # phrased, and eight points cost a fraction of eight scripts.
         "you_already_told_them_here": (request.already_covered_here or request.already_said_here or [])[-8:],
-        "required_subject": SUBJECT_LADDER[min(visits, len(SUBJECT_LADDER) - 1)],
+        "required_subject": required_subject(visits),
         "names_already_spent": spent_names(request.already_covered_here),
+        # Everything the host has aired this drive, this village and the ones
+        # behind it, as short keys. A duller fact that is new beats a good one
+        # repeated, and this is the list that decides which is which.
+        "nothing_here_may_repeat": (request.covered_keys or [])[-40:],
         "already_covered_do_not_say_again": [
             item
             for item in (
@@ -669,6 +731,12 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
                     if len(trimmed.split()) >= 25:
                         script.spoken_text = trimmed
             reasons = []
+            clash = repeats_covered_point(script.covered, request.covered_keys)
+            if clash:
+                reasons.append(
+                    f"you taught something already aired ({clash!r}) — pick anything unspent, "
+                    "however small"
+                )
             spent = _repeats_spent_name(script.spoken_text, request.already_covered_here)
             if spent:
                 reasons.append(f"you named {spent} again — the driver already heard about them")
@@ -712,6 +780,13 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
                 else:
                     data = await _gemini(request, retry_user)
                 script = _script_from_model(request, data, provider)
+                if visits >= 1:
+                    script.spoken_text = strip_locator_sentences(script.spoken_text, request, local)
+                # Last word: if the rewrite still teaches something already aired,
+                # say so. Airing it anyway is the one outcome worth avoiding, and
+                # the client has three more clips in hand to play instead.
+                if repeats_covered_point(script.covered, request.covered_keys):
+                    script.duplicate = True
             cache.set_json(cache_key, script.model_dump(), ttl_s=60 * 60 * 24)
             return script
         except Exception as exc:

@@ -83,6 +83,10 @@ class ScriptRequest(BaseModel):
     # by Rome, 229 BC"). Carrying points instead of whole scripts is what keeps the
     # request small however long the car sits in one village.
     already_covered_here: list[str] = []
+    # Every point aired so far this drive, across all places, as short keys. The
+    # per-place thread is dropped when the car leaves; this is what stops the
+    # same monastery being introduced again two villages later.
+    covered_keys: list[str] = []
     continuation: bool = False
 
 
@@ -97,6 +101,9 @@ class NarrationScript(BaseModel):
     tags: list[str] = []
     # One short line naming what this clip taught, for the next clip's memory.
     covered: str = ""
+    # Set when even the rewrite taught something already aired. The client skips
+    # these rather than repeat itself; there are more clips in the queue.
+    duplicate: bool = False
     cached: bool = False
     source: Literal["claude", "openai", "gemini", "knowledge", "wikipedia", "cache"] = "claude"
 

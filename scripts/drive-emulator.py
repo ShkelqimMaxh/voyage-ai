@@ -167,7 +167,8 @@ class Emulator:
     already_said: list = field(default_factory=list)
     script_cache: dict = field(default_factory=dict)  # (place_id, topic) -> script
     audio_cache: dict = field(default_factory=dict)  # script_id -> url
-    said_here: dict = field(default_factory=dict)  # village key -> texts
+    said_here: dict = field(default_factory=dict)  # village key -> covered points
+    covered_keys: list = field(default_factory=list)  # every point aired, drive-wide
     warmed: dict = field(default_factory=dict)  # url -> duration_s
     host_alive: bool = True
     route_done: bool = False
@@ -321,6 +322,7 @@ class Emulator:
             "previous_place_ids": list(self.previous_ids),
             "already_said": list(self.already_said)[-3:],
             "already_covered_here": list(self.said_here.get(village_key(place), [])),
+            "covered_keys": list(self.covered_keys)[-40:],
             "continuation": bool(self.already_said),
         }
         t0 = time.monotonic()
@@ -406,6 +408,10 @@ class Emulator:
                 thread.append(point)
                 if len(thread) > 8:
                     thread.pop(0)
+            if point and point not in self.covered_keys:
+                self.covered_keys.append(point)
+                if len(self.covered_keys) > 40:
+                    self.covered_keys.pop(0)
             # Drop villages we have driven past; their thread is dead weight.
             live = set(self.previous_ids[-3:]) | {key}
             for gone in [k for k in self.said_here if k not in live]:
@@ -533,6 +539,9 @@ class Emulator:
                 continue
             clip = queue.pop(0)
             prefetch()
+            if clip["script"].get("duplicate"):
+                self.emit("skipped_duplicate", place=clip["place"].get("name"))
+                continue
             await self.play_clip(clip, "clip")
             if self.route_done and not queue and inflight == 0:
                 self.host_alive = False

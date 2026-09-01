@@ -97,6 +97,10 @@ const alreadySaid: string[] = [];
  *  whole script — so it continues the thread there instead of re-introducing the
  *  place every time the car stops moving. Dropped as soon as we leave. */
 const saidHere = new Map<string, string[]>();
+/** Every point aired this drive, anywhere — one short key each. The per-village
+ *  thread is dropped when we leave; this is what stops the same monastery being
+ *  introduced again two villages later. Forty keys is a few dozen words. */
+const coveredKeys: string[] = [];
 const TOPIC_WHEEL: Topic[] = ["culture", "food", "history", "surprise"];
 let topicIndex = 0;
 let hostAlive = false;
@@ -150,6 +154,7 @@ async function buildScript(get: () => PlayerState, place: Place, topic: Topic): 
     previousPlaceIds: previousIds,
     alreadySaid,
     alreadyCoveredHere: saidHere.get(placeKey(place)) ?? [],
+    coveredKeys,
     continuation: alreadySaid.length > 0,
   });
 }
@@ -164,6 +169,10 @@ function rememberSaidHere(place: Place, script: NarrationScript): void {
   thread.push(point);
   if (thread.length > 8) thread.shift();
   saidHere.set(key, thread);
+  if (!coveredKeys.includes(point)) {
+    coveredKeys.push(point);
+    if (coveredKeys.length > 40) coveredKeys.shift();
+  }
   forgetLeftBehind(key);
 }
 
@@ -362,6 +371,12 @@ async function runHostForever(set: (partial: Partial<PlayerState>) => void, get:
       const clip = queue.shift();
       if (!clip) continue;
       prefetch();
+      if (clip.script.duplicate) {
+        // The backend could not find anything unaired for this place. Airing it
+        // would repeat something the driver already heard, and there is another
+        // clip behind it — drop this one and move on.
+        continue;
+      }
       await playClip(set, get, clip.script, clip.place);
     }
   } finally {
@@ -431,6 +446,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     hostAlive = true;
     alreadySaid.length = 0;
     saidHere.clear();
+    coveredKeys.length = 0;
     topicIndex = 0;
     scriptTails = [];
     pendingPerLane[0] = 0;
@@ -486,6 +502,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     hostAlive = true;
     alreadySaid.length = 0;
     saidHere.clear();
+    coveredKeys.length = 0;
     topicIndex = 0;
     scriptTails = [];
     pendingPerLane[0] = 0;

@@ -63,6 +63,8 @@ export interface NarrationScript {
   tags: string[];
   /** One short line naming what this clip taught, kept as the next clip's memory. */
   covered?: string;
+  /** The backend found nothing unaired for this place; skip rather than repeat. */
+  duplicate?: boolean;
   cached: boolean;
   source: "claude" | "openai" | "gemini" | "knowledge" | "wikipedia" | "cache" | "device";
   audioUrl?: string | null;

@@ -94,3 +94,33 @@ def test_a_passing_mention_survives_the_scrub():
     )
     trimmed = strip_locator_sentences(spoken, _request(previous=["lubozhde"]), None)
     assert trimmed == spoken
+
+
+def test_the_checklist_wraps_instead_of_jamming_on_its_last_rung():
+    """Indexing with min(visits, last) gave three clips in a row about diaspora
+    money once a stop ran past the end of the list."""
+    from app.services.claude_scripts import SUBJECT_LADDER, required_subject
+
+    assert required_subject(0) == SUBJECT_LADDER[0]
+    assert required_subject(5) == SUBJECT_LADDER[5]
+    late = required_subject(len(SUBJECT_LADDER) + 3)
+    assert late != SUBJECT_LADDER[-1]
+    assert "NOT in" in late
+
+
+def test_a_point_already_aired_is_caught_however_reworded():
+    from app.services.claude_scripts import repeats_covered_point
+
+    aired = ["Monastery of the Mother of God in Hvosno, north of Peja"]
+    assert repeats_covered_point("Mother of God Monastery, Hvosno, near Mokra", aired)
+    assert repeats_covered_point("Ibrahim Rugova, first President of Kosovo, born here", aired) is None
+
+
+def test_drive_wide_keys_outlive_the_village_thread():
+    """The per-village thread is dropped on leaving, so this is what stops the
+    same monastery being introduced again two villages later."""
+    packet = _packet(_request(previous=["lubozhde"], covered=[]))
+    assert packet["nothing_here_may_repeat"] == []
+    req = _request(previous=["lubozhde"])
+    req.covered_keys = ["Monastery of the Mother of God, Hvosno"]
+    assert "Monastery of the Mother of God, Hvosno" in _packet(req)["nothing_here_may_repeat"]

@@ -93,6 +93,9 @@ let unphase: (() => void) | null = null;
 let uncarplay: (() => void) | null = null;
 const previousIds: string[] = [];
 const alreadySaid: string[] = [];
+/** What the host has said about each village, so it continues the thread there
+ *  instead of re-introducing the place every time the car stops moving. */
+const saidHere = new Map<string, string[]>();
 const TOPIC_WHEEL: Topic[] = ["culture", "food", "history", "surprise"];
 let topicIndex = 0;
 let scriptTail: Promise<void> = Promise.resolve();
@@ -146,8 +149,23 @@ async function buildScript(get: () => PlayerState, place: Place, topic: Topic): 
     weather: get().weather,
     previousPlaceIds: previousIds,
     alreadySaid,
+    alreadySaidHere: saidHere.get(placeKey(place)) ?? [],
     continuation: alreadySaid.length > 0,
   });
+}
+
+function rememberSaidHere(place: Place, text: string): void {
+  const key = placeKey(place);
+  const thread = saidHere.get(key) ?? [];
+  if (!text || thread.includes(text)) return;
+  thread.push(text);
+  if (thread.length > 8) thread.shift();
+  saidHere.set(key, thread);
+  // One village per drive is the common case; keep the map from growing forever.
+  if (saidHere.size > 24) {
+    const oldest = saidHere.keys().next().value;
+    if (oldest && oldest !== key) saidHere.delete(oldest);
+  }
 }
 
 function rememberSaid(text: string): void {
@@ -204,6 +222,7 @@ async function prepareClip(get: () => PlayerState, place: Place, topic: Topic): 
   const script = await enqueueScript(async () => {
     const next = await withDeadline(buildScript(get, place, topic), 60000);
     rememberSaid(next.spokenText);
+    rememberSaidHere(place, next.spokenText);
     return next;
   });
   return { script: await resolveVoice(script), place };
@@ -386,6 +405,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     hostEpoch += 1;
     hostAlive = true;
     alreadySaid.length = 0;
+    saidHere.clear();
     topicIndex = 0;
     scriptTail = Promise.resolve();
     const { path, durationMs, speedMps, seedName } = DEMO_ROUTES[routeId] ?? DEMO_ROUTES["peja-istog"];
@@ -438,6 +458,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     hostEpoch += 1;
     hostAlive = true;
     alreadySaid.length = 0;
+    saidHere.clear();
     topicIndex = 0;
     scriptTail = Promise.resolve();
     set({ live: true, demo: false, error: undefined });

@@ -66,6 +66,7 @@ export async function generateScript(input: {
   expand?: boolean;
   previousPlaceIds?: string[];
   alreadySaid?: string[];
+  alreadySaidHere?: string[];
   continuation?: boolean;
 }): Promise<NarrationScript> {
   const data = await request<Record<string, unknown>>("/v1/scripts/generate", {
@@ -96,6 +97,7 @@ export async function generateScript(input: {
     expand: Boolean(input.expand),
     previous_place_ids: input.previousPlaceIds ?? [],
     already_said: input.alreadySaid ?? [],
+    already_said_here: input.alreadySaidHere ?? [],
     continuation: Boolean(input.continuation),
   });
   return {

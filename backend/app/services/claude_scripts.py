@@ -386,6 +386,9 @@ def _packet(request: ScriptRequest) -> dict:
             "street_you_are_on": None if visits else (request.place.road_name or (local or {}).get("street")),
             "street_note": None if visits else (local or {}).get("street_note"),
         },
+        # The thread so far, oldest first. The host continues this; it does not
+        # start over and it does not restate any of it.
+        "you_already_told_them_here": (request.already_said_here or [])[-6:],
         "already_covered_do_not_say_again": [
             item
             for item in (
@@ -537,7 +540,7 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
                 reasons.append("you re-introduced a place the driver already knows")
             if _repeats_opening(script.spoken_text, request.already_said):
                 reasons.append("you opened with the same words as an earlier clip")
-            if _repeats_phrase(script.spoken_text, request.already_said):
+            if _repeats_phrase(script.spoken_text, request.already_said + (request.already_said_here or [])):
                 reasons.append("you repeated a whole phrase the driver already heard")
             if _bad_opener(script.spoken_text):
                 reasons.append("you opened with a filler word instead of the fact")

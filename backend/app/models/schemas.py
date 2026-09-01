@@ -76,6 +76,9 @@ class ScriptRequest(BaseModel):
     expand: bool = False
     previous_place_ids: list[str] = []
     already_said: list[str] = []
+    # What the host has already said about THIS place, oldest first. The running
+    # thread it is meant to continue rather than restart.
+    already_said_here: list[str] = []
     continuation: bool = False
 
 

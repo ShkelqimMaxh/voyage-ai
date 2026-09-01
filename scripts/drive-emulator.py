@@ -392,6 +392,14 @@ class Emulator:
             self.remember_said(script["spoken_text"])
             # Carry the model's own one-line summary, like the client does.
             key = village_key(place)
+            # The client counts a place as visited when the clip is queued, not
+            # when it finishes playing. Recording it at play time left the first
+            # `ahead` clips in a village all seeing times_here == 0, so each one
+            # introduced the village again — the harness manufacturing exactly
+            # the repetition it was measuring.
+            self.previous_ids.append(key)
+            if len(self.previous_ids) > 8:
+                self.previous_ids.pop(0)
             thread = self.said_here.setdefault(key, [])
             point = (script.get("covered") or script["spoken_text"][:60]).strip()
             if point and point not in thread:
@@ -454,9 +462,7 @@ class Emulator:
             )
         )
         self.remember_said(script["spoken_text"])
-        self.previous_ids.append(village_key(clip["place"]))
-        if len(self.previous_ids) > 8:
-            self.previous_ids.pop(0)
+        # previous_ids is appended in prepare_clip, matching the client.
 
     async def run_host_forever(self) -> None:
         queue: list = []
@@ -603,6 +609,43 @@ class Emulator:
         self.emit("arrived")
 
 
+PROPER_NAME = re.compile(r"\b([A-ZËÇ][\w\u00eb\u00e7'-]+(?:\s+[A-ZËÇ][\w\u00eb\u00e7'-]+){1,2})\b")
+INTRO = re.compile(
+    r"(?i)^(we(?:'| a)re (?:in|now in|driving through)|we've (?:just )?entered|this is|"
+    r"welcome to|here in|as we enter|passing through)\b"
+)
+
+
+def repetition_report(clips: list) -> dict:
+    """The numbers every drive gets judged on, computed for us instead of by hand."""
+    villages = [c.place_name for c in clips]
+    village_names = list(dict.fromkeys(villages))
+    intros = sum(1 for c in clips if INTRO.match(c.text.strip()))
+    names: dict = {}
+    for clip in clips:
+        for name in set(PROPER_NAME.findall(clip.text)):
+            names[name] = names.get(name, 0) + 1
+    repeated = sorted(
+        ((n, c) for n, c in names.items() if c > 1 and n not in village_names),
+        key=lambda item: -item[1],
+    )
+    openings: dict = {}
+    dupes = 0
+    for clip in clips:
+        key = " ".join(re.findall(r"[\w']+", clip.text.lower())[:5])
+        if key and key in openings:
+            dupes += 1
+        openings[key] = True
+    return {
+        "intros": intros,
+        "villages": len(village_names),
+        "village_names": village_names,
+        "repeated_names": repeated[:10],
+        "repeated_openings": dupes,
+        "people": len(names),
+    }
+
+
 def wav_seconds(data: bytes) -> float:
     with wave.open(io.BytesIO(data)) as w:
         return w.getnframes() / float(w.getframerate())
@@ -650,6 +693,7 @@ def main() -> int:
         for clip in emu.clips:
             fh.write(json.dumps({"event": "clip", **clip.__dict__}) + "\n")
 
+    repeats = repetition_report(emu.clips)
     gaps = [c for c in emu.clips if c.gap_before_s > args.gap_threshold]
     talk = sum(c.audio_s for c in emu.clips)
     wall = emu.clips[-1].end_s if emu.clips else 0.0
@@ -663,6 +707,19 @@ def main() -> int:
         longest = max(gaps, key=lambda c: c.gap_before_s)
         print(f"longest gap         : {longest.gap_before_s:.1f}s (before clip #{longest.index})")
         print(f"mean gap > {args.gap_threshold:.0f}s     : {sum(c.gap_before_s for c in gaps) / len(gaps):.1f}s")
+    print(f"log                 : {out}")
+    print("\n-- repetition --")
+    print(f"introductions       : {repeats['intros']} (one per village is the target: {repeats['villages']})")
+    print(f"villages            : {', '.join(repeats['village_names'])}")
+    if repeats["repeated_names"]:
+        print("names said more than once:")
+        for name, count in repeats["repeated_names"]:
+            print(f"    {name}: {count}x")
+    else:
+        print("names said more than once: none")
+    if repeats["repeated_openings"]:
+        print(f"clips opening like an earlier clip: {repeats['repeated_openings']}")
+    print(f"distinct people named: {repeats['people']}")
     print(f"log                 : {out}")
     return 0
 

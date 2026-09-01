@@ -287,6 +287,19 @@ def strip_locator_sentences(spoken: str, request: ScriptRequest, local: dict | N
     return trimmed if len(trimmed.split()) >= 25 else spoken.strip()
 
 
+def _redact_spent(text: str, request: ScriptRequest, visits: int) -> str:
+    if not visits:
+        return text
+    spent = list(spent_names(request.already_covered_here))
+    street = request.place.road_name or ""
+    if street:
+        spent.append(street)
+    for name in spent:
+        if name:
+            text = re.sub(re.escape(name), "[already covered]", text, flags=re.I)
+    return text
+
+
 def strip_reintroduction(spoken: str, request: ScriptRequest, local: dict | None) -> str:
     """Delete a re-introducing lead sentence instead of paying for a rewrite.
 
@@ -520,7 +533,10 @@ def _packet(request: ScriptRequest) -> dict:
             "on_the_ground": request.place.landmarks,
             "locator": locator,
         },
-        "already_said": request.already_said[-3:],
+        # Redacted: three whole previous scripts are here so the host does not
+        # echo phrasing, but they also carried the street name and the people
+        # already covered, which primed it to say them again.
+        "already_said": [_redact_spent(text, request, visits) for text in request.already_said[-3:]],
         "do_not_repeat": banned,
         "continuation": request.continuation,
         "instruction": (

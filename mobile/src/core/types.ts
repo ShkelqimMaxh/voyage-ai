@@ -61,6 +61,8 @@ export interface NarrationScript {
   durationHintS: number;
   bridgeIn: string;
   tags: string[];
+  /** One short line naming what this clip taught, kept as the next clip's memory. */
+  covered?: string;
   cached: boolean;
   source: "claude" | "openai" | "gemini" | "knowledge" | "wikipedia" | "cache" | "device";
   audioUrl?: string | null;

@@ -26,6 +26,7 @@ import math
 import re
 import sys
 import time
+import unicodedata
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,6 +74,14 @@ def point_along_route(route, t: float):
             return (lat, lon, bearing_deg(route[i], route[i + 1]))
         remain -= span
     return (route[-1][0], route[-1][1], bearing_deg(route[-2], route[-1]))
+
+
+def village_key(place: dict) -> str:
+    """Mirror of the client's placeKey(): reverse geocoding returns a different
+    OSM node per fix, so repeat visits are keyed on the settlement name."""
+    raw = re.split(r"[\u2013\u2014/,-]", place.get("name") or place.get("id") or "")[0].strip().lower()
+    folded = unicodedata.normalize("NFKD", raw)
+    return "".join(ch for ch in folded if ch.isalnum() or ch.isspace()).strip() or str(place.get("id"))
 
 
 def pace_from_speed(speed_mps) -> str:
@@ -158,6 +167,7 @@ class Emulator:
     already_said: list = field(default_factory=list)
     script_cache: dict = field(default_factory=dict)  # (place_id, topic) -> script
     audio_cache: dict = field(default_factory=dict)  # script_id -> url
+    said_here: dict = field(default_factory=dict)  # village key -> texts
     warmed: dict = field(default_factory=dict)  # url -> duration_s
     host_alive: bool = True
     route_done: bool = False
@@ -309,7 +319,8 @@ class Emulator:
             "locale": "en",
             "expand": False,
             "previous_place_ids": list(self.previous_ids),
-            "already_said": list(self.already_said),
+            "already_said": list(self.already_said)[-3:],
+            "already_covered_here": list(self.said_here.get(village_key(place), [])),
             "continuation": bool(self.already_said),
         }
         t0 = time.monotonic()
@@ -375,10 +386,22 @@ class Emulator:
         return seconds
 
     # ------------------------------------------------------------ host loop
-    async def prepare_clip(self, place: dict, wheel_topic: str, mutex: asyncio.Lock) -> dict:
-        async with mutex:  # enqueueScript
+    async def prepare_clip(self, place: dict, wheel_topic: str, mutex: asyncio.Semaphore) -> dict:
+        async with mutex:  # enqueueScript: two lanes, like the client
             script, script_s = await self.with_deadline(self.build_script(place, wheel_topic), 60.0)
             self.remember_said(script["spoken_text"])
+            # Carry the model's own one-line summary, like the client does.
+            key = village_key(place)
+            thread = self.said_here.setdefault(key, [])
+            point = (script.get("covered") or script["spoken_text"][:60]).strip()
+            if point and point not in thread:
+                thread.append(point)
+                if len(thread) > 8:
+                    thread.pop(0)
+            # Drop villages we have driven past; their thread is dead weight.
+            live = set(self.previous_ids[-3:]) | {key}
+            for gone in [k for k in self.said_here if k not in live]:
+                del self.said_here[gone]
         url, tts_s = await self.resolve_audio(script)
         return {"script": script, "place": place, "url": url, "script_s": script_s, "tts_s": tts_s}
 
@@ -431,7 +454,7 @@ class Emulator:
             )
         )
         self.remember_said(script["spoken_text"])
-        self.previous_ids.append(clip["place"].get("id"))
+        self.previous_ids.append(village_key(clip["place"]))
         if len(self.previous_ids) > 8:
             self.previous_ids.pop(0)
 
@@ -439,8 +462,8 @@ class Emulator:
         queue: list = []
         inflight = 0
         cooldown_until = 0.0
-        ahead = 2
-        mutex = asyncio.Lock()
+        ahead = 4
+        mutex = asyncio.Semaphore(2)
         tasks: set = set()
 
         def prefetch():

@@ -93,12 +93,12 @@ let unphase: (() => void) | null = null;
 let uncarplay: (() => void) | null = null;
 const previousIds: string[] = [];
 const alreadySaid: string[] = [];
-/** What the host has said about each village, so it continues the thread there
- *  instead of re-introducing the place every time the car stops moving. */
+/** What the host has covered in each village — one short line per clip, not the
+ *  whole script — so it continues the thread there instead of re-introducing the
+ *  place every time the car stops moving. Dropped as soon as we leave. */
 const saidHere = new Map<string, string[]>();
 const TOPIC_WHEEL: Topic[] = ["culture", "food", "history", "surprise"];
 let topicIndex = 0;
-let scriptTail: Promise<void> = Promise.resolve();
 let hostAlive = false;
 let hostEpoch = 0;
 let loopRunning = false;
@@ -149,22 +149,31 @@ async function buildScript(get: () => PlayerState, place: Place, topic: Topic): 
     weather: get().weather,
     previousPlaceIds: previousIds,
     alreadySaid,
-    alreadySaidHere: saidHere.get(placeKey(place)) ?? [],
+    alreadyCoveredHere: saidHere.get(placeKey(place)) ?? [],
     continuation: alreadySaid.length > 0,
   });
 }
 
-function rememberSaidHere(place: Place, text: string): void {
+function rememberSaidHere(place: Place, script: NarrationScript): void {
   const key = placeKey(place);
+  // One short line ("Teuta's fleet beaten by Rome, 229 BC"), falling back to the
+  // opening sentence when the model files nothing.
+  const point = (script.covered || script.spokenText.split(/(?<=[.!?])\s+/)[0] || "").slice(0, 120);
   const thread = saidHere.get(key) ?? [];
-  if (!text || thread.includes(text)) return;
-  thread.push(text);
+  if (!point || thread.includes(point)) return;
+  thread.push(point);
   if (thread.length > 8) thread.shift();
   saidHere.set(key, thread);
-  // One village per drive is the common case; keep the map from growing forever.
-  if (saidHere.size > 24) {
-    const oldest = saidHere.keys().next().value;
-    if (oldest && oldest !== key) saidHere.delete(oldest);
+  forgetLeftBehind(key);
+}
+
+/** Once the car is two villages past somewhere, its thread is dead weight: it
+ *  costs tokens on every request and we are not driving back. */
+function forgetLeftBehind(currentKey: string): void {
+  const live = new Set(previousIds.slice(-3));
+  live.add(currentKey);
+  for (const key of [...saidHere.keys()]) {
+    if (!live.has(key)) saidHere.delete(key);
   }
 }
 
@@ -174,16 +183,32 @@ function rememberSaid(text: string): void {
   if (alreadySaid.length > 12) alreadySaid.shift();
 }
 
+// Two scripts may be written at once. Serialised, generation ran ~20s a clip
+// against ~19s of speech, so the host consumed clips fractionally faster than it
+// could write them and the queue drained no matter how deep it was — that is the
+// dead air. Two lanes give the writer headroom; beyond two, clips get written
+// against memory too stale to dedupe against.
+const SCRIPT_LANES = 2;
+let scriptTails: Array<Promise<void>> = [];
+const pendingPerLane = [0, 0];
+
 async function enqueueScript<T>(work: () => Promise<T>): Promise<T> {
+  while (scriptTails.length < SCRIPT_LANES) scriptTails.push(Promise.resolve());
+  let lane = 0;
+  for (let i = 1; i < SCRIPT_LANES; i += 1) {
+    if (pendingPerLane[i] < pendingPerLane[lane]) lane = i;
+  }
+  pendingPerLane[lane] += 1;
   let release!: () => void;
-  const previous = scriptTail;
-  scriptTail = new Promise<void>((resolve) => {
+  const previous = scriptTails[lane];
+  scriptTails[lane] = new Promise<void>((resolve) => {
     release = resolve;
   });
   await previous;
   try {
     return await work();
   } finally {
+    pendingPerLane[lane] -= 1;
     release();
   }
 }
@@ -222,7 +247,7 @@ async function prepareClip(get: () => PlayerState, place: Place, topic: Topic): 
   const script = await enqueueScript(async () => {
     const next = await withDeadline(buildScript(get, place, topic), 60000);
     rememberSaid(next.spokenText);
-    rememberSaidHere(place, next.spokenText);
+    rememberSaidHere(place, next);
     return next;
   });
   return { script: await resolveVoice(script), place };
@@ -407,7 +432,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     alreadySaid.length = 0;
     saidHere.clear();
     topicIndex = 0;
-    scriptTail = Promise.resolve();
+    scriptTails = [];
+    pendingPerLane[0] = 0;
+    pendingPerLane[1] = 0;
     const { path, durationMs, speedMps, seedName } = DEMO_ROUTES[routeId] ?? DEMO_ROUTES["peja-istog"];
     const start = path[0];
     set({
@@ -460,7 +487,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     alreadySaid.length = 0;
     saidHere.clear();
     topicIndex = 0;
-    scriptTail = Promise.resolve();
+    scriptTails = [];
+    pendingPerLane[0] = 0;
+    pendingPerLane[1] = 0;
     set({ live: true, demo: false, error: undefined });
     unpoint = locationEngine.onPoint((point) => queuePoint(set, get, point));
     void runHostForever(set, get);

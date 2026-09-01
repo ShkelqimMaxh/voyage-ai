@@ -26,7 +26,7 @@ export class ScriptService {
     expand?: boolean;
     previousPlaceIds?: string[];
     alreadySaid?: string[];
-    alreadySaidHere?: string[];
+    alreadyCoveredHere?: string[];
     continuation?: boolean;
   }): Promise<NarrationScript> {
     const topic = this.nextTopic(input.topic);

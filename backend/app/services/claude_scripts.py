@@ -83,6 +83,25 @@ GENERIC_FILLER = (
 )
 # Openers that mean the host is winding up instead of talking.
 BANNED_OPENERS = ("alright", "okay", "so ", "well ", "and here", "right here")
+# What each successive clip about one place must be ABOUT. The model used to
+# choose, and left to itself it re-introduced the village. Position 0 is the only
+# one allowed to introduce anything.
+SUBJECT_LADDER = (
+    "introduce: the place name, the street, and who that street honours",
+    "A PERSON. Name one human being tied to this ground — born here, died here, "
+    "buried here, or lived here: an athlete, a politician, a singer, a writer, a "
+    "teacher, a commander. Say who they were and what they actually did. If nobody "
+    "from this exact village is known to you, name someone from this municipality "
+    "and say the connection plainly ('from Istog, just up the road'). Do not "
+    "substitute a topic for a person.",
+    "an event with a year attached: what happened here, and when",
+    "what this place is known for: a product, an industry, a market, a club, a dish",
+    "ANOTHER PERSON, different from the one you already named: whoever else this "
+    "ground produced or buried. Same rules — a name and a deed.",
+    "one named thing you can see or reach from here: a landmark, a river, a "
+    "monastery, a gorge, a mill",
+    "how the place lives now: who works where, what changed in the last decade",
+)
 PLACE_ANGLES = ("daily_life", "food", "one_landmark", "work_people")
 ANGLES = ("daily_life", "food", "one_landmark", "work_people", "one_landscape")
 ANGLE_FACT = {
@@ -211,6 +230,30 @@ def _reintroduces(spoken: str, request: ScriptRequest, local: dict | None, visit
         if tokens and all(part in spoken.lower().replace("ë", "e") for part in tokens):
             return True
     return False
+
+
+def strip_reintroduction(spoken: str, request: ScriptRequest, local: dict | None) -> str:
+    """Delete a re-introducing lead sentence instead of paying for a rewrite.
+
+    A retry costs another full model round trip — about 20s, which is most of a
+    clip's playback budget. When the only problem is that the host said "We're in
+    Vrelle, on Mbretëresha Teute street" for the fifth time, cutting that sentence
+    fixes it for free.
+    """
+    name = (request.place.name or "").lower().replace("ë", "e")
+    street = (request.place.road_name or (local or {}).get("street") or "").lower().replace("ë", "e")
+    street_tokens = [part for part in street.split() if len(part) >= 4]
+    sentences = re.split(r"(?<=[.!?])\s+", spoken.strip())
+    kept: list[str] = []
+    for index, sentence in enumerate(sentences):
+        flat = sentence.lower().replace("ë", "e")
+        leading = index < 2 and not kept
+        names_place = bool(name) and name in flat
+        names_street = bool(street_tokens) and all(part in flat for part in street_tokens)
+        if leading and (names_place or names_street):
+            continue
+        kept.append(sentence)
+    return " ".join(kept).strip() or spoken.strip()
 
 
 def _bad_opener(spoken: str) -> bool:
@@ -347,6 +390,7 @@ def _script_from_model(request: ScriptRequest, data: dict, source: str) -> Narra
         duration_hint_s=int(data.get("duration_hint_s") or _duration_for(spoken, request.expand)),
         bridge_in=str(data.get("bridge_in") or f"Next, {request.place.name}."),
         tags=list(data.get("tags") or [request.topic.value]),
+        covered=str(data.get("covered") or "")[:120],
         cached=False,
         source=source,  # type: ignore[arg-type]
     )
@@ -386,9 +430,11 @@ def _packet(request: ScriptRequest) -> dict:
             "street_you_are_on": None if visits else (request.place.road_name or (local or {}).get("street")),
             "street_note": None if visits else (local or {}).get("street_note"),
         },
-        # The thread so far, oldest first. The host continues this; it does not
-        # start over and it does not restate any of it.
-        "you_already_told_them_here": (request.already_said_here or [])[-6:],
+        # The thread so far as short points, oldest first. Points, not whole
+        # scripts: the host needs to know WHAT it covered, not re-read how it was
+        # phrased, and eight points cost a fraction of eight scripts.
+        "you_already_told_them_here": (request.already_covered_here or request.already_said_here or [])[-8:],
+        "required_subject": SUBJECT_LADDER[min(visits, len(SUBJECT_LADDER) - 1)],
         "already_covered_do_not_say_again": [
             item
             for item in (
@@ -411,7 +457,7 @@ def _packet(request: ScriptRequest) -> dict:
             "on_the_ground": request.place.landmarks,
             "locator": locator,
         },
-        "already_said": request.already_said[-8:],
+        "already_said": request.already_said[-3:],
         "do_not_repeat": banned,
         "continuation": request.continuation,
         "instruction": (
@@ -535,6 +581,12 @@ async def generate_script(request: ScriptRequest) -> NarrationScript:
             script = _script_from_model(request, data, provider)
             local = _lookup_local(request.place)
             visits = times_here(request)
+            if visits >= 1 and _reintroduces(script.spoken_text, request, local, visits):
+                # Free fix first. Only if cutting the lead leaves nothing worth
+                # airing do we spend a second model call.
+                trimmed = strip_reintroduction(script.spoken_text, request, local)
+                if len(trimmed.split()) >= 25:
+                    script.spoken_text = trimmed
             reasons = []
             if _reintroduces(script.spoken_text, request, local, visits):
                 reasons.append("you re-introduced a place the driver already knows")

@@ -79,6 +79,10 @@ class ScriptRequest(BaseModel):
     # What the host has already said about THIS place, oldest first. The running
     # thread it is meant to continue rather than restart.
     already_said_here: list[str] = []
+    # The same thread compressed to one short line per clip ("Teuta's fleet beaten
+    # by Rome, 229 BC"). Carrying points instead of whole scripts is what keeps the
+    # request small however long the car sits in one village.
+    already_covered_here: list[str] = []
     continuation: bool = False
 
 
@@ -91,6 +95,8 @@ class NarrationScript(BaseModel):
     duration_hint_s: int = Field(..., ge=15, le=60)
     bridge_in: str
     tags: list[str] = []
+    # One short line naming what this clip taught, for the next clip's memory.
+    covered: str = ""
     cached: bool = False
     source: Literal["claude", "openai", "gemini", "knowledge", "wikipedia", "cache"] = "claude"
 

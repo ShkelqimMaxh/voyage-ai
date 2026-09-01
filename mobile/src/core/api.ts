@@ -66,7 +66,7 @@ export async function generateScript(input: {
   expand?: boolean;
   previousPlaceIds?: string[];
   alreadySaid?: string[];
-  alreadySaidHere?: string[];
+  alreadyCoveredHere?: string[];
   continuation?: boolean;
 }): Promise<NarrationScript> {
   const data = await request<Record<string, unknown>>("/v1/scripts/generate", {
@@ -97,7 +97,7 @@ export async function generateScript(input: {
     expand: Boolean(input.expand),
     previous_place_ids: input.previousPlaceIds ?? [],
     already_said: input.alreadySaid ?? [],
-    already_said_here: input.alreadySaidHere ?? [],
+    already_covered_here: input.alreadyCoveredHere ?? [],
     continuation: Boolean(input.continuation),
   });
   return {
@@ -109,6 +109,7 @@ export async function generateScript(input: {
     durationHintS: Number(data.duration_hint_s),
     bridgeIn: String(data.bridge_in),
     tags: (data.tags as string[]) ?? [],
+    covered: String(data.covered ?? ""),
     cached: Boolean(data.cached),
     source: data.source as NarrationScript["source"],
   };

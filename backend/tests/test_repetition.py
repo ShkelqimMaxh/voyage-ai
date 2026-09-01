@@ -124,3 +124,29 @@ def test_drive_wide_keys_outlive_the_village_thread():
     req = _request(previous=["lubozhde"])
     req.covered_keys = ["Monastery of the Mother of God, Hvosno"]
     assert "Monastery of the Mother of God, Hvosno" in _packet(req)["nothing_here_may_repeat"]
+
+
+def test_conversational_scaffolding_does_not_collide_two_good_clips():
+    """A flat two-word rule threw away twelve clips on one drive: "speaking",
+    "beyond" and "history" are not content."""
+    from app.services.claude_scripts import repeats_covered_point
+
+    aired = ["Speaking of history, Ali Hadri the historian from Istog"]
+    fresh = "Beyond the history we discussed, families expanding trout farms"
+    assert repeats_covered_point(fresh, aired) is None
+
+
+def test_a_genuine_repeat_still_collides():
+    from app.services.claude_scripts import repeats_covered_point
+
+    aired = ["Trout farms on the White Drin supply Istog restaurants"]
+    assert repeats_covered_point("White Drin trout farms supplying restaurants in Istog", aired)
+
+
+def test_overlap_must_be_proportional_not_just_absolute():
+    """Two shared words out of three is a repeat; two out of ten is two clips
+    that both happen to mention Istog."""
+    from app.services.claude_scripts import repeats_covered_point
+
+    aired = ["Istog municipality governs fifty villages including Cerrce and Lubozhde plus Vrelle"]
+    assert repeats_covered_point("Istog market supplied by Cerrce farmers", aired) is None

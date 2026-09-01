@@ -371,10 +371,10 @@ async function runHostForever(set: (partial: Partial<PlayerState>) => void, get:
       const clip = queue.shift();
       if (!clip) continue;
       prefetch();
-      if (clip.script.duplicate) {
-        // The backend could not find anything unaired for this place. Airing it
-        // would repeat something the driver already heard, and there is another
-        // clip behind it — drop this one and move on.
+      if (clip.script.duplicate && queue.length > 0) {
+        // Skipping is right when another clip is ready behind it. Skipping into
+        // an empty queue trades a mild repeat for dead air, and dead air is the
+        // worse of the two.
         continue;
       }
       await playClip(set, get, clip.script, clip.place);

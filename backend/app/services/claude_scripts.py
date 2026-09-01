@@ -274,21 +274,47 @@ STOP_KEYS = {
     "been", "were", "which", "what", "when", "about", "also", "very", "just", "still",
     "these", "those", "into", "over", "some", "many", "much", "more", "most", "like",
     "known", "local", "area", "place", "village", "town", "people", "years", "year",
+    # Conversational scaffolding, not content. Left in, "speaking"/"beyond"/
+    # "history" collided three unrelated clips into false duplicates and the
+    # client threw all three away.
+    "speaking", "beyond", "actually", "little", "pretty", "itself", "exactly",
+    "right", "find", "main", "where", "while", "bigger", "further", "goes", "back",
+    "really", "quite", "around", "through", "along", "another", "things", "thing",
+    "history", "historic", "historical", "culture", "cultural", "life", "daily",
+    "voyagefm", "we're", "we've", "discussed", "mentioned", "talked", "note",
 }
+
+
+def _significant(line: str) -> set:
+    """Tokens worth colliding on: names, numbers, and long content words."""
+    raw = line or ""
+    tokens = set()
+    for word in re.findall(r"[\w'ëç]+", raw):
+        low = word.lower().replace("ë", "e")
+        if low in STOP_KEYS or len(low) < 4:
+            continue
+        if word[0].isupper() or any(ch.isdigit() for ch in word) or len(low) >= 6:
+            tokens.add(low)
+    return tokens
 
 
 def repeats_covered_point(covered_line: str, keys: list[str]) -> str | None:
     """Does this clip teach something already taught?
 
     Compares the model's own one-line summary against every point aired so far.
-    Two content words in common is a repeat — "Mother of God Monastery, Hvosno"
-    against "Monastery of the Mother of God, north of Peja" shares four.
+    Overlap has to be both absolute and proportional: two shared words out of
+    three is a repeat, two out of ten is two clips that happen to mention Istog.
+    A flat two-word rule threw away twelve good clips on one drive.
     """
-    fresh = _key_tokens(covered_line)
+    fresh = _significant(covered_line)
     if len(fresh) < 2:
         return None
     for previous in keys or []:
-        if len(fresh & _key_tokens(previous)) >= 2:
+        older = _significant(previous)
+        if len(older) < 2:
+            continue
+        shared = fresh & older
+        if len(shared) >= 2 and len(shared) / min(len(fresh), len(older)) >= 0.5:
             return previous
     return None
 

@@ -138,6 +138,8 @@ class Clip:
     gap_before_s: float
     script_latency_s: float
     tts_latency_s: float
+    covered: str = ""
+    duplicate: bool = False
 
 
 @dataclass
@@ -465,6 +467,8 @@ class Emulator:
                 gap_before_s=round(gap, 2),
                 script_latency_s=round(clip["script_s"], 2),
                 tts_latency_s=round(clip["tts_s"], 2),
+                covered=str(script.get("covered") or ""),
+                duplicate=bool(script.get("duplicate")),
             )
         )
         self.remember_said(script["spoken_text"])
@@ -539,7 +543,10 @@ class Emulator:
                 continue
             clip = queue.pop(0)
             prefetch()
-            if clip["script"].get("duplicate"):
+            if clip["script"].get("duplicate") and queue:
+                # Skipping is right when another clip is ready. Skipping into an
+                # empty queue trades a mild repeat for dead air, which is the
+                # worse of the two — 12 skips opened a 68s hole on the last drive.
                 self.emit("skipped_duplicate", place=clip["place"].get("name"))
                 continue
             await self.play_clip(clip, "clip")
@@ -620,8 +627,10 @@ class Emulator:
 
 PROPER_NAME = re.compile(r"\b([A-ZËÇ][\w\u00eb\u00e7'-]+(?:\s+[A-ZËÇ][\w\u00eb\u00e7'-]+){1,2})\b")
 INTRO = re.compile(
-    r"(?i)^(we(?:'| a)re (?:in|now in|driving through)|we've (?:just )?entered|this is|"
-    r"welcome to|here in|as we enter|passing through)\b"
+    r"(?i)^\W*(?:alright,?\s+|okay,?\s+|so,?\s+|and\s+)?"
+    r"(we(?:'| a)re (?:in|now in|now entering|entering|driving through)|"
+    r"we've (?:just )?(?:come into|entered)|entering|this is|welcome to|here in|"
+    r"as we (?:enter|come into)|passing through)\b"
 )
 
 

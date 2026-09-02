@@ -111,16 +111,11 @@ function IdleBody({
           VoyageFM
         </Text>
         <Text style={styles.waiting}>
-          Your road, narrated live. Pick a route and the host takes it from there.
+          Your road, narrated live. Hit the air and the host takes it from there.
         </Text>
       </View>
       <View style={[styles.startStack, isWide && styles.startRow]}>
         <BigButton label="Live GPS" tone="accent" onPress={() => void store.startLive()} />
-        <BigButton label="Demo · Peja → Istog" onPress={() => void store.startDemo("peja-istog")} />
-        <BigButton label="Demo · SF → Oakland" onPress={() => void store.startDemo("sf-oakland")} />
-        <BigButton label="Demo · Prishtina → Skopje" onPress={() => void store.startDemo("prishtina-skopje")} />
-        <BigButton label="Demo · Vrellë → Cërrcë" onPress={() => void store.startDemo("vrelle-cerrce")} />
-        <BigButton label="Demo · Vrellë → Istog" onPress={() => void store.startDemo("vrelle-istogcenter")} />
       </View>
     </View>
   );

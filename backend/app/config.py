@@ -17,7 +17,10 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
-    gemini_tts_model: str = "gemini-2.5-pro-preview-tts"
+    # Flash, not Pro: Pro TTS has no free tier at all, so on a free-tier key every
+    # request failed on Pro and then retried on Flash — two calls against a 5-15
+    # RPM ceiling for one clip. Flash is also half the price per audio token.
+    gemini_tts_model: str = "gemini-2.5-flash-preview-tts"
     gemini_tts_voice: str = "Callirrhoe"
 
     elevenlabs_api_key: str = ""

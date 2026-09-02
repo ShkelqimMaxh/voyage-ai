@@ -129,6 +129,58 @@ export async function renderTts(script: NarrationScript): Promise<string | null>
   return `${config.apiUrl}${data.audio_url}`;
 }
 
+export async function askHost(input: {
+  place: Place;
+  question: string;
+  pace: DrivePace;
+  weather?: string;
+  nowSaying?: string | null;
+  alreadyCoveredHere?: string[];
+  coveredKeys?: string[];
+}): Promise<{
+  id: string;
+  spokenText: string;
+  durationHintS: number;
+  onTopic: boolean;
+  expanded: boolean;
+  covered: string;
+}> {
+  const data = await request<Record<string, unknown>>("/v1/ask", {
+    place: {
+      id: input.place.id,
+      name: input.place.name,
+      kind: input.place.kind,
+      country: input.place.country,
+      region: input.place.region,
+      municipality: input.place.municipality,
+      city: input.place.city,
+      neighbourhood: input.place.neighbourhood,
+      latitude: input.place.latitude,
+      longitude: input.place.longitude,
+      summary: input.place.summary,
+      wikipedia_extract: input.place.wikipediaExtract,
+      road_name: input.place.roadName ?? null,
+      landmarks: input.place.landmarks ?? [],
+      facts: input.place.facts ?? [],
+    },
+    question: input.question,
+    pace: input.pace,
+    locale: "en",
+    weather: input.weather,
+    now_saying: input.nowSaying ?? null,
+    already_covered_here: input.alreadyCoveredHere ?? [],
+    covered_keys: input.coveredKeys ?? [],
+  });
+  return {
+    id: String(data.id),
+    spokenText: String(data.spoken_text),
+    durationHintS: Number(data.duration_hint_s ?? 15),
+    onTopic: Boolean(data.on_topic ?? true),
+    expanded: Boolean(data.expanded),
+    covered: String(data.covered ?? ""),
+  };
+}
+
 export async function prefetchRoute(
   polyline: GeoPoint[],
   topics: Topic[] = ["history", "landscape"],

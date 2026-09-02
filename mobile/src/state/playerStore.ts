@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { create } from "zustand";
 
 import type { AudioMode, DrivePace, GeoPoint, NarrationScript, Place, PlaceContext, PlayerPhase, Topic } from "../core/types";
+import { askHost as requestAnswer } from "../core/api";
 import { paceFromSpeed } from "../core/geo";
 import { audioMixer } from "../engine/audio/AudioMixer";
 import { warmWebSpeech } from "../engine/audio/WebSpeechPlayer";
@@ -100,6 +101,9 @@ interface PlayerState {
   rerollTopic: () => Promise<void>;
   tellMeMore: () => Promise<void>;
   toggleMusic: () => Promise<void>;
+  askHost: (question: string) => Promise<void>;
+  asking: boolean;
+  lastAnswer?: string;
   testVoice: () => Promise<void>;
   musicOn: boolean;
 }
@@ -124,6 +128,8 @@ let hostEpoch = 0;
 let loopRunning = false;
 let latestPoint: GeoPoint | null = null;
 let pumping = false;
+/** True while the host is answering a question, so the loop holds the mic. */
+let interjecting = false;
 
 type ReadyClip = { script: NarrationScript; place: Place };
 
@@ -380,6 +386,11 @@ async function runHostForever(set: (partial: Partial<PlayerState>) => void, get:
     prefetch();
     while (hostAlive && hostEpoch === epoch) {
       prefetch();
+      // The driver interrupted: hold the mic until the answer is finished, or
+      // the loop and the answer talk over each other.
+      while (interjecting && hostAlive && hostEpoch === epoch) {
+        await sleep(120);
+      }
       while (hostAlive && hostEpoch === epoch && queue.length === 0) {
         await sleep(80);
         prefetch();
@@ -443,6 +454,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   error: undefined,
   busy: false,
   musicOn: true,
+  asking: false,
+  lastAnswer: undefined,
   demoPath: PEJA_ISTOG_ROAD_WAYPOINTS,
 
   async startDemo(routeId: DemoRouteId = "peja-istog") {
@@ -575,6 +588,54 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   async tellMeMore() {
     await audioMixer.skipSpeech();
+  },
+
+  async askHost(question: string) {
+    const asked = question.trim();
+    if (!asked || get().asking) return;
+    const place = get().context?.current ?? roadPlace(get().point, null);
+    set({ asking: true, error: undefined });
+    interjecting = true;
+    try {
+      // Stop mid-sentence. Being interrupted is the whole point of the button.
+      await audioMixer.skipSpeech();
+      const answer = await requestAnswer({
+        place,
+        question: asked,
+        pace: paceFromSpeed(get().point?.speedMps),
+        weather: get().weather,
+        nowSaying: get().script?.spokenText ?? null,
+        alreadyCoveredHere: saidHere.get(placeKey(place)) ?? [],
+        coveredKeys,
+      });
+      const script: NarrationScript = {
+        id: answer.id,
+        placeId: place.id,
+        topic: "surprise",
+        title: asked,
+        spokenText: answer.spokenText,
+        durationHintS: answer.durationHintS,
+        bridgeIn: "",
+        tags: ["answer"],
+        cached: false,
+        source: "gemini",
+        covered: answer.covered,
+      };
+      set({ script, lastAnswer: answer.spokenText });
+      const voiced = await ttsService.resolveAudio(script);
+      await audioMixer.speak(voiced);
+      // File the answer so the host's own clips do not repeat it later. An
+      // off-topic reply taught nothing, so it is not filed.
+      if (answer.onTopic && answer.covered) {
+        rememberSaid(answer.spokenText);
+        rememberSaidHere(place, script);
+      }
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "Could not answer that" });
+    } finally {
+      interjecting = false;
+      set({ asking: false });
+    }
   },
 
   async toggleMusic() {

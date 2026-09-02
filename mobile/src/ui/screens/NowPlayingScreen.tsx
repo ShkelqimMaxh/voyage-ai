@@ -1,7 +1,15 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
 import { paceFromSpeed } from "../../core/geo";
 import type { Place } from "../../core/types";
@@ -161,6 +169,60 @@ function OnAirBody({
         <BigButton label="Re-roll" onPress={() => void store.rerollTopic()} />
         <BigButton label="Tell me more" onPress={() => void store.tellMeMore()} />
       </View>
+      <Interrupt store={store} />
+    </View>
+  );
+}
+
+/** Cut the host off and ask it something about where you are. */
+function Interrupt({ store }: { store: ReturnType<typeof usePlayerStore.getState> }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+
+  const send = () => {
+    const asked = question.trim();
+    if (!asked) return;
+    setQuestion("");
+    setOpen(false);
+    void store.askHost(asked);
+  };
+
+  if (!open) {
+    return (
+      <View style={styles.askRow}>
+        <BigButton
+          label={store.asking ? "Answering…" : "Interrupt"}
+          tone="accent"
+          onPress={() => setOpen(true)}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.askOpen}>
+      <Text style={styles.askHint}>Ask about where you are</Text>
+      <TextInput
+        style={styles.askInput}
+        value={question}
+        onChangeText={setQuestion}
+        placeholder="Who else is from here?"
+        placeholderTextColor={colors.muted}
+        autoFocus
+        returnKeyType="send"
+        onSubmitEditing={send}
+        multiline={false}
+      />
+      <View style={styles.askButtons}>
+        <BigButton label="Ask" tone="accent" onPress={send} />
+        <BigButton
+          label="Cancel"
+          onPress={() => {
+            setQuestion("");
+            setOpen(false);
+          }}
+        />
+      </View>
     </View>
   );
 }
@@ -268,6 +330,40 @@ function compass(deg?: number | null): string {
 }
 
 const styles = StyleSheet.create({
+  askRow: {
+    marginTop: space.sm,
+  },
+  askOpen: {
+    marginTop: space.sm,
+    gap: space.sm,
+    padding: space.md,
+    borderRadius: radius.card,
+    borderWidth: ruleWidth,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
+  askHint: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: colors.muted,
+  },
+  askInput: {
+    fontFamily: fonts.body,
+    fontSize: 20,
+    color: colors.text,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    borderRadius: radius.btn,
+    borderWidth: ruleWidth,
+    borderColor: colors.divider,
+    backgroundColor: colors.bg,
+  },
+  askButtons: {
+    flexDirection: "row",
+    gap: space.sm,
+  },
   root: { flex: 1, backgroundColor: colors.bg },
   scroll: {
     paddingTop: 56,

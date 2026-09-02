@@ -90,6 +90,36 @@ class ScriptRequest(BaseModel):
     continuation: bool = False
 
 
+class AskRequest(BaseModel):
+    """A driver interrupting the host with a question about where they are."""
+
+    place: Place
+    question: str = Field(..., min_length=2, max_length=400)
+    pace: DrivePace = DrivePace.rural
+    locale: str = "en"
+    weather: str | None = None
+    # What the host is in the middle of saying, so the answer can pick it up.
+    now_saying: str | None = None
+    already_covered_here: list[str] = []
+    covered_keys: list[str] = []
+
+
+class AskResponse(BaseModel):
+    id: str
+    place_id: str
+    question: str
+    spoken_text: str = Field(..., min_length=2)
+    duration_hint_s: int = Field(..., ge=3, le=90)
+    # False when the question was not about this place, this road or this drive:
+    # the host says so briefly and hands back rather than inventing a lecture.
+    on_topic: bool = True
+    # True when the driver asked to hear more about something already covered,
+    # which is the one case where repeating is the right answer.
+    expanded: bool = False
+    covered: str = ""
+    source: Literal["claude", "openai", "gemini", "knowledge"] = "gemini"
+
+
 class NarrationScript(BaseModel):
     id: str
     place_id: str

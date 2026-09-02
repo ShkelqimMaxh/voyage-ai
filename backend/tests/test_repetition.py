@@ -150,3 +150,14 @@ def test_overlap_must_be_proportional_not_just_absolute():
 
     aired = ["Istog municipality governs fifty villages including Cerrce and Lubozhde plus Vrelle"]
     assert repeats_covered_point("Istog market supplied by Cerrce farmers", aired) is None
+
+
+def test_asking_for_more_is_the_one_case_where_repeating_is_right():
+    from app.services.ask import wants_more
+
+    assert wants_more("tell me more about Rugova")
+    assert wants_more("wait, what was that name again?")
+    assert wants_more("say that again")
+    assert wants_more("sorry, didn't catch that")
+    assert not wants_more("who else is from here?")
+    assert not wants_more("is there anywhere good to eat in Istog?")

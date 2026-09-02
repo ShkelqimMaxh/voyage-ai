@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import active_llm, get_settings
-from app.routers import places, prefetch, scripts, tts
+from app.routers import ask, places, prefetch, scripts, tts
 
 settings = get_settings()
 
@@ -26,6 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(ask.router)
 app.include_router(places.router)
 app.include_router(scripts.router)
 app.include_router(tts.router)

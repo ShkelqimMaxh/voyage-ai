@@ -187,6 +187,7 @@ class Emulator:
         rec = {"t": round(self.now(), 2), "event": _event, **fields}
         self.log.append(rec)
         self.events.append(rec)
+        self._append(rec)
         line = f"[{rec['t']:7.1f}s] {_event}"
         detail = " ".join(f"{k}={v}" for k, v in fields.items() if k not in {"text"})
         print(f"{line} {detail}"[:200], flush=True)
@@ -471,6 +472,7 @@ class Emulator:
                 duplicate=bool(script.get("duplicate")),
             )
         )
+        self._append({"event": "clip", **self.clips[-1].__dict__})
         self.remember_said(script["spoken_text"])
         # previous_ids is appended in prepare_clip, matching the client.
 
@@ -593,6 +595,14 @@ class Emulator:
         except Exception:
             pass
 
+    out_path: Path = None  # type: ignore
+
+    def _append(self, rec: dict) -> None:
+        if not self.out_path:
+            return
+        with self.out_path.open("a") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
     async def run(self) -> None:
         self.started = time.monotonic()
         async with httpx.AsyncClient(timeout=httpx.Timeout(180.0), headers={"ngrok-skip-browser-warning": "1"}) as client:
@@ -699,17 +709,15 @@ def main() -> int:
         seed_name=args.seed_name,
         route_id=args.route,
     )
+    out = Path(args.out)
+    out.write_text("")  # records are appended as they happen, so a stopped run is still readable
+    emu.out_path = out
     try:
         asyncio.run(emu.run())
     except KeyboardInterrupt:
         pass
 
     out = Path(args.out)
-    with out.open("w") as fh:
-        for rec in emu.log:
-            fh.write(json.dumps(rec) + "\n")
-        for clip in emu.clips:
-            fh.write(json.dumps({"event": "clip", **clip.__dict__}) + "\n")
 
     repeats = repetition_report(emu.clips)
     gaps = [c for c in emu.clips if c.gap_before_s > args.gap_threshold]

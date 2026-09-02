@@ -112,6 +112,7 @@ function IdleBody({
         <BigButton label="Demo · SF → Oakland" onPress={() => void store.startDemo("sf-oakland")} />
         <BigButton label="Demo · Prishtina → Skopje" onPress={() => void store.startDemo("prishtina-skopje")} />
         <BigButton label="Demo · Vrellë → Cërrcë" onPress={() => void store.startDemo("vrelle-cerrce")} />
+        <BigButton label="Demo · Vrellë → Istog" onPress={() => void store.startDemo("vrelle-istogcenter")} />
       </View>
     </View>
   );

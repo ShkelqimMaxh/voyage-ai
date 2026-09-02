@@ -18,6 +18,11 @@ import {
 } from "../engine/location/prishtinaSkopjeDemo";
 import { SF_OAKLAND_WAYPOINTS, US_DEMO_DURATION_MS, US_DEMO_SPEED_MPS } from "../engine/location/usDemoRoute";
 import {
+  VRELLE_ISTOGCENTER_DURATION_MS,
+  VRELLE_ISTOGCENTER_SPEED_MPS,
+  VRELLE_ISTOGCENTER_WAYPOINTS,
+} from "../engine/location/vrelleIstogcenterDemo";
+import {
   VRELLE_CERRCE_DURATION_MS,
   VRELLE_CERRCE_SPEED_MPS,
   VRELLE_CERRCE_WAYPOINTS,
@@ -30,7 +35,12 @@ import { fetchWeather } from "../engine/weather/WeatherService";
 
 const geofence = new GeofenceManager();
 
-export type DemoRouteId = "peja-istog" | "sf-oakland" | "prishtina-skopje" | "vrelle-cerrce";
+export type DemoRouteId =
+  | "peja-istog"
+  | "sf-oakland"
+  | "prishtina-skopje"
+  | "vrelle-cerrce"
+  | "vrelle-istogcenter";
 
 const DEMO_ROUTES: Record<
   DemoRouteId,
@@ -47,6 +57,12 @@ const DEMO_ROUTES: Record<
     durationMs: US_DEMO_DURATION_MS,
     speedMps: US_DEMO_SPEED_MPS,
     seedName: "San Francisco",
+  },
+  "vrelle-istogcenter": {
+    path: VRELLE_ISTOGCENTER_WAYPOINTS,
+    durationMs: VRELLE_ISTOGCENTER_DURATION_MS,
+    speedMps: VRELLE_ISTOGCENTER_SPEED_MPS,
+    seedName: "Vrellë",
   },
   "vrelle-cerrce": {
     path: VRELLE_CERRCE_WAYPOINTS,
